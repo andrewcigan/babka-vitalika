@@ -1,0 +1,127 @@
+{
+  "version": "5.2.0",
+  "wip_limit": 1,
+  "active": null,
+  "mode": "FAST",
+  "_note": "Черновой план по волнам, зафиксирован на /new-project. Детализация (affected_files, verification, integration_boundaries) — на /dev-plan после /architecture. Размеры S/M/L — абстрактная сложность, НЕ человеко-дни.",
+  "features": {
+    "awaiting_research": [
+      {
+        "id": "feat-001",
+        "name": "Research: как n8n отдаёт Google access_token боту",
+        "description": "Найти и проверить рабочий механизм, которым внешний n8n (облако) отдаёт нашему боту свежий Google access_token (Calendar+Gmail scopes). n8n по дизайну прячет креды — нужен проверенный способ (n8n webhook workflow / Public API / отдельный refresh-flow). Output: docs/research/n8n-token-bridge.md с рабочим вариантом + 2-3 альтернативы.",
+        "category": "integration",
+        "size_estimate": "S",
+        "wave": 0,
+        "blocks": ["feat-004"],
+        "business_invariant": "ref: domain-rules.invariants.n8n_is_token_keeper_only"
+      },
+      {
+        "id": "feat-002",
+        "name": "Research/decision: голосовой ввод на Railway",
+        "description": "Нужен ли голосовой ввод (как в Sensei-tsy через локальный whisper) и если да — какой Whisper API (OpenAI / Groq) по цене/качеству/задержке. На Railway локального whisper нет. Output: решение + (если да) выбранный провайдер.",
+        "category": "integration",
+        "size_estimate": "S",
+        "wave": 0,
+        "business_invariant": "ref: domain-rules.open_decisions.voice_input"
+      }
+    ],
+    "captured": [
+      {
+        "id": "feat-003",
+        "name": "Каркас бота на Railway",
+        "description": "Скелет TypeScript-бота (grammy Telegram), деплой на Railway, подключение к Railway Postgres, healthcheck, конфиг через env vars. Бот отвечает /start и /help на английском.",
+        "category": "infra",
+        "size_estimate": "M",
+        "wave": 1,
+        "business_invariant": "ref: domain-rules.invariants.product_language_english"
+      },
+      {
+        "id": "feat-004",
+        "name": "Мост к n8n: получение Google access_token",
+        "description": "Модуль token-bridge: бот запрашивает у n8n свежий Google access_token (по механизму из feat-001), кэширует, обновляет при истечении. Единственная точка обращения к n8n.",
+        "category": "integration",
+        "size_estimate": "M",
+        "wave": 1,
+        "dependencies": ["feat-001", "feat-003"],
+        "business_invariant": "ref: domain-rules.invariants.n8n_is_token_keeper_only"
+      },
+      {
+        "id": "feat-005",
+        "name": "Модель данных (Postgres)",
+        "description": "Схема Postgres: calendar_events (зеркало + dedup_key + status + audit), calendar_event_audit (append-only), processed_emails (gmail_message_id UNIQUE). ОБЯЗАТЕЛЬНО критический data-model reviewer (Opus) перед реализацией — наследует решения data-model-review.md из Sensei-tsy + добавляет почту.",
+        "category": "data",
+        "size_estimate": "M",
+        "wave": 1,
+        "dependencies": ["feat-003"],
+        "requires_data_model_review": true,
+        "business_invariant": "ref: domain-rules.invariants.calendar_event_traceable"
+      },
+      {
+        "id": "feat-006",
+        "name": "Календарь: детекция и создание события",
+        "description": "Детектор событий из текста (перенос логики Sensei-tsy detector на английские промпты, Haiku/OpenRouter) → создание в Google Calendar через бот → карточка 'Created…' в Telegram + [Delete]. all-day vs timed логика как в образце.",
+        "category": "workflow",
+        "size_estimate": "L",
+        "wave": 2,
+        "dependencies": ["feat-004", "feat-005"],
+        "business_invariant": "ref: domain-rules.invariants.no_silent_calendar_creation"
+      },
+      {
+        "id": "feat-007",
+        "name": "Календарь: правка / перенос / отмена через текст",
+        "description": "Intent-детектор (create/modify/cancel/none) + fuzzy-матчер целевого события + карточка подтверждения [Yes]/[Cancel]. Перенос времени/даты, отмена. Перенос логики feat-12c из Sensei-tsy.",
+        "category": "workflow",
+        "size_estimate": "L",
+        "wave": 2,
+        "dependencies": ["feat-006"],
+        "business_invariant": "ref: domain-rules.invariants.verify_in_real_google"
+      },
+      {
+        "id": "feat-008",
+        "name": "Календарь: проверка занятости слота",
+        "description": "Перед созданием timed-события — проверка занятости через Google events.list. Если занято — карточка конфликта [Book anyway]/[Don't book]/[Reschedule existing]. Перенос feat-12e из Sensei-tsy.",
+        "category": "workflow",
+        "size_estimate": "M",
+        "wave": 2,
+        "dependencies": ["feat-007"],
+        "business_invariant": "ref: domain-rules.disambiguation_triggers.slot_busy"
+      },
+      {
+        "id": "feat-009",
+        "name": "Почта: опрос новых входящих Gmail",
+        "description": "Периодический опрос Gmail API (новые входящие письма), отметка обработанных в processed_emails (idempotent, без двойных уведомлений при рестарте). Частота и фильтр — уточнить на /architecture.",
+        "category": "integration",
+        "size_estimate": "M",
+        "wave": 3,
+        "dependencies": ["feat-004", "feat-005"],
+        "business_invariant": "ref: domain-rules.invariants.email_idempotent_no_double_notify"
+      },
+      {
+        "id": "feat-010",
+        "name": "Почта: выжимка письма + уведомление в Telegram",
+        "description": "Для каждого нового письма — краткая выжимка (LLM, Haiku/OpenRouter, английский) → уведомление в Telegram с отправителем/темой/выжимкой. Формат (по одному / дайджест) — уточнить на /architecture.",
+        "category": "workflow",
+        "size_estimate": "M",
+        "wave": 3,
+        "dependencies": ["feat-009"],
+        "business_invariant": "ref: domain-rules.invariants.product_language_english"
+      }
+    ],
+    "up_next": [],
+    "active_list": [],
+    "done": [],
+    "rejected": [],
+    "superseded": [],
+    "awaiting_reviewer": [],
+    "awaiting_demo_milestone": [],
+    "awaiting_user_acceptance": []
+  },
+  "waves": {
+    "0": "Исследование и решения (feat-001 n8n-токен — блокер, feat-002 голос)",
+    "1": "Фундамент (каркас бота на Railway, мост к n8n, модель данных Postgres)",
+    "2": "Календарь (создание, правка/отмена, проверка занятости)",
+    "3": "Почта (опрос Gmail, выжимки в Telegram)",
+    "future": "Google Drive + расширения по запросу клиента"
+  }
+}

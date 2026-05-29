@@ -1,0 +1,207 @@
+# Domain Rules — BabkaVitalika
+#
+# Telegram-бот для клиента: Google Calendar (CRUD событий) + Gmail (выжимки писем),
+# OAuth держит n8n (облако), хостинг Railway. Всё user-facing — на английском.
+# Заполнено на /new-project, дополняется на /architecture, /detail-architecture, /feature.
+
+# ============================================================
+# PRODUCT SEMANTICS
+# ============================================================
+product_semantics:
+  main_function: >
+    Telegram-бот, через который конечный пользователь (англоязычный клиент) обычным языком
+    управляет своим Google Calendar — создаёт, переносит, отменяет события, видит проверку
+    занятости слота — и получает в Telegram краткие выжимки новых входящих писем Gmail.
+    Бот хостится на Railway, сам ходит в Google API, а доступ к Google (OAuth) держит и
+    отдаёт по запросу внешний n8n (в облаке клиента). Google Drive — отложено.
+
+  product_phases:
+    phase_1_mvp:
+      goal: "Календарь (CRUD + конфликт-чек) + почта (выжимки в Telegram), на английском"
+      includes:
+        - "Каркас бота на Railway (grammy Telegram, Postgres, healthcheck, env-конфиг)"
+        - "Мост к n8n: получение свежего Google access_token (механизм — research feat-001)"
+        - "Календарь: детекция события из текста → создание в Google + карточка"
+        - "Календарь: правка/перенос/отмена через текст (intent-детектор + подтверждение)"
+        - "Календарь: проверка занятости слота перед созданием + карточка конфликта"
+        - "Почта: опрос новых входящих Gmail → краткая выжимка (LLM) → уведомление в Telegram"
+      done_when:
+        - "Из Telegram создаётся/переносится/отменяется событие — подтверждено в реальном Google"
+        - "Новое письмо в Gmail → в течение интервала опроса приходит выжимка в Telegram (1 раз)"
+        - "Весь текст бота — на английском"
+        - "Бот живёт на Railway, переживает перезапуск без потери данных и без переавторизации Google"
+
+    phase_2_future:
+      goal: "Google Drive + расширения по запросу клиента"
+      status: "captured, после phase_1"
+
+  not_a_bug:
+    - example: "n8n не делает операций календаря/почты — только хранит и отдаёт Google-доступ"
+      reason: "Сознательное решение заказчика: n8n как стабильный держатель OAuth, операции — на боте"
+    - example: "Новые письма приходят выжимкой не мгновенно, а раз в интервал опроса"
+      reason: "Gmail опрашивается периодически (polling), не мгновенный webhook в MVP"
+    - example: "Создание события — сразу, а правка/отмена — через кнопку подтверждения"
+      reason: "Создать заново дёшево, а перенести/удалить чужое — нужен явный [Yes] (наследие Sensei-tsy)"
+    - example: "Все тексты на английском даже при русском вводе пользователя"
+      reason: "Конечный пользователь англоязычный — продукт целиком English"
+
+  success_metric:
+    - name: "calendar_real_state_match"
+      target: "100% операций (create/modify/cancel) отражаются в реальном Google Calendar"
+      measured_by: "events.get read-back после каждой операции в e2e"
+    - name: "email_no_double_notify"
+      target: "0 повторных уведомлений об одном письме"
+      measured_by: "счётчик processed_emails == счётчик уведомлений"
+    - name: "google_auth_uptime"
+      target: "0 ручных переавторизаций Google за месяц (n8n держит доступ)"
+      measured_by: "лог отказов 401 от Google API"
+
+# ============================================================
+# TARGET
+# ============================================================
+target_markets:
+  end_user: "клиент Атсыхана, англоязычный, один аккаунт Google"
+  languages: [en]                 # продукт целиком на английском
+  multitenant: false              # один Google-аккаунт на установку
+  notes: >
+    Не мультитенант в MVP. Если понадобится несколько клиентов — отдельная развилка
+    (как хранить несколько Google-подключений в n8n / несколько ботов).
+
+# ============================================================
+# INVARIANTS
+# ============================================================
+invariants:
+  - rule: "product_language_english"
+    description: "Весь user-facing текст бота — только английский (сообщения, кнопки, карточки, выжимки писем, ошибки, /start, /help). Русский ввод пользователя допустим, ответ — английский."
+    mechanism: "DISCIPLINE-RULE + review: все строки UI в одном модуле (i18n/en.ts), code-review проверяет отсутствие кириллицы в user-facing строках."
+    test_assertion: "grep кириллицы по модулю UI-строк = 0 совпадений; e2e: ответы бота на английском"
+
+  - rule: "n8n_is_token_keeper_only"
+    description: "n8n хранит Google OAuth-подключение и по запросу отдаёт боту свежий access_token. n8n НЕ выполняет операций календаря/почты. Все вызовы Google API делает бот."
+    mechanism: "Архитектурный контракт: единственная точка обращения к n8n — модуль token-bridge. Механизм отдачи токена — research feat-001 (НЕ гадать, n8n прячет креды по дизайну)."
+    test_assertion: "В коде нет вызовов n8n кроме token-bridge; календарь/почта дёргают Google API напрямую"
+
+  - rule: "verify_in_real_google"
+    description: "«Готово» для любой Google-операции = подтверждённое состояние в реальном Google (events.get / Gmail messages.get), НЕ запись status='active' в нашей Postgres."
+    mechanism: "DISCIPLINE-RULE + e2e-скрипты с read-back из Google. Наследие feedback_calendar_verify_real_google.md из Sensei-tsy."
+    test_assertion: "e2e: после create/modify/cancel — events.get возвращает ожидаемое состояние"
+
+  - rule: "calendar_event_traceable"
+    description: "Каждое календарное событие связано с породившим его сообщением Telegram. Нельзя создать событие 'из ниоткуда'."
+    mechanism: "SQL: calendar_events.source_message_id NOT NULL. Enforce на уровне БД (FK + NOT NULL). Финализируется data-model reviewer (feat-005)."
+    test_assertion: "INSERT без source_message_id → FAIL"
+
+  - rule: "calendar_event_audit_trail"
+    description: "Любое изменение события (создание/перенос/отмена/удаление) пишется в append-only журнал с before/after и инициатором."
+    mechanism: "SQL: таблица calendar_event_audit + запрет UPDATE/DELETE. Наследие data-model-review Sensei-tsy."
+    test_assertion: "UPDATE/DELETE по audit → FAIL; после операции — строка в audit"
+
+  - rule: "calendar_idempotent_no_duplicates"
+    description: "Повторная обработка одного сообщения (recovery после рестарта Railway) НЕ создаёт дубль события в Google."
+    mechanism: "SQL: calendar_events.dedup_key UNIQUE. Бот проверяет перед создdanием; UNIQUE — вторая линия."
+    test_assertion: "повторный processMessage → skipped_duplicate, createEvent дёрнут 1 раз"
+
+  - rule: "no_silent_calendar_creation"
+    description: "На каждое созданное событие бот шлёт карточку в Telegram (что создано + кнопка удаления). Пользователь всегда видит и может откатить."
+    mechanism: "DISCIPLINE-RULE воркера + integration smoke (created → card отправлена)."
+    test_assertion: "smoke: после createEvent — sendCard вызван 1 раз"
+
+  - rule: "email_idempotent_no_double_notify"
+    description: "Одно входящее письмо уведомляется в Telegram ровно один раз, даже при рестарте бота или повторном опросе Gmail."
+    mechanism: "SQL: processed_emails (gmail_message_id UNIQUE). Опрос помечает обработанные ДО отправки уведомления + защита UNIQUE."
+    test_assertion: "повторный опрос того же письма → 0 новых уведомлений"
+
+  - rule: "no_tool_use"
+    description: "LLM (выжимки, детекция событий, intent) возвращают структурированный JSON по схеме, код реагирует. Никакого function calling."
+    mechanism: "response_format json + валидатор схемы + retry; наследие Sensei-tsy."
+    test_assertion: "нет tools=[...] в вызовах LLM"
+
+# ============================================================
+# DISAMBIGUATION
+# ============================================================
+disambiguation_triggers:
+  - trigger: "calendar_target_ambiguous"
+    description: "Команда правки/отмены нашла несколько подходящих событий"
+    action: "карточка выбора 'which one?' с кандидатами (английский)"
+  - trigger: "slot_busy"
+    description: "Слот занят при создании события"
+    action: "карточка конфликта: [Book anyway] / [Don't book] / [Reschedule existing]"
+
+# ============================================================
+# RUNTIME CONSTRAINTS
+# ============================================================
+runtime_constraints:
+  node_version: ">=20"
+  hosting: "Railway (бот + Postgres)"
+  os_compat: [linux]              # Railway-контейнер, НЕ Mac — никаких локальных зависимостей (whisper.cpp)
+  external_services:
+    - "n8n (облако клиента) — держатель Google OAuth"
+    - "Google Calendar API + Gmail API"
+    - "OpenRouter (LLM)"
+    - "Telegram Bot API"
+
+# ============================================================
+# ANTI-PATTERNS
+# ============================================================
+anti_patterns:
+  - name: "guess_vendor_mechanism_without_research"
+    reason: "n8n прячет креды по дизайну. Гадать как отдать токен наружу = риск построить нерабочую связку."
+    source: "global vendor-research rule + this project feat-001"
+  - name: "local_whisper_on_railway"
+    reason: "На Railway нет ~/bin/transcribe.sh. Голос требует Whisper API (OpenAI/Groq) — отдельная развилка."
+    source: "перенос с Mac mini на облако"
+  - name: "sqlite_on_railway_ephemeral_disk"
+    reason: "Диск Railway эфемерен — SQLite-файл теряется при деплое. Нужен managed Postgres."
+    source: "перенос инфраструктуры"
+  - name: "hardcoded_absolute_paths"
+    reason: "Окружение Railway другое — всё через env vars, никаких ~/Coding/... путей."
+    source: "Sensei-tsy урок sensei"
+  - name: "tool_use_on_medium_models"
+    reason: "Haiku/Sonnet tool_use ненадёжен — state-machine + JSON-схема."
+    source: "global rule"
+  - name: "russian_in_product"
+    reason: "Конечный пользователь англоязычный — кириллица в UI = баг."
+    source: "заказчик 2026-05-29"
+
+# ============================================================
+# COST POLICY
+# ============================================================
+cost_policy:
+  per_feature_budget_usd: 5.00
+  monthly_total_budget_usd: 20.00     # LLM (выжимки писем + детекция) ~$5-10, Railway ~$5-10, n8n платит клиент
+  preferred_providers:
+    llm_summary: "openrouter/anthropic/claude-haiku-4-5"   # выжимки писем, детекция событий, intent
+    voice_to_text: "развилка feat-002 (OpenAI/Groq Whisper API, если нужен голос)"
+    embeddings: "не нужны"
+    image_gen: "не нужно"
+  notes: "n8n-облако оплачивает клиент (вне нашего бюджета). LLM через OpenRouter API-ключ, не подписка."
+  forbidden_providers:
+    - "claude_via_subscription"        # продукт не должен зависеть от подписки Claude Code
+
+# ============================================================
+# OPEN DECISIONS — закрыть на /architecture
+# ============================================================
+open_decisions:
+  - id: "n8n_token_mechanism"
+    question: "Каким именно способом n8n отдаёт боту свежий Google access_token?"
+    status: "research feat-001 (блокирует всё)"
+  - id: "voice_input"
+    question: "Нужен ли голосовой ввод? Если да — Whisper API (нет локального whisper на Railway)"
+    status: "open, развилка feat-002"
+  - id: "email_scope"
+    question: "Какие письма уведомлять — все входящие / только важные / по фильтру? Частота опроса?"
+    status: "open, уточнить на /architecture (блок почты)"
+  - id: "email_digest_format"
+    question: "Выжимка по одному письму сразу или дайджест пачкой раз в период?"
+    status: "open, уточнить на /architecture"
+  - id: "timezone"
+    question: "Часовой пояс клиента (Sensei-tsy был Europe/Minsk) — какой у англоязычного клиента?"
+    status: "open, уточнить на /architecture"
+
+# ============================================================
+# FRESHNESS
+# ============================================================
+freshness:
+  created: "2026-05-29"
+  last_reviewed: "2026-05-29"
+  review_every_n_sessions: 10

@@ -1,0 +1,142 @@
+# Tools Allowlist & Safety Policy
+# Этот файл — enforce-механизм для подсистемы Cost & Safety.
+# Hooks в hooks/pre-bash.sh, hooks/pre-write.sh читают этот файл и блокируют нарушения.
+# Создаётся при первом использовании external API или при /new-project FULL.
+
+# ============================================================
+# GIT POLICY
+# ============================================================
+git:
+  push:
+    allowed_branches: ["feat-*", "fix-*", "main"]
+    main_requires_explicit: "/ship"  # на main только через /ship
+    force_push: deny                  # никогда без явного разрешения
+
+  commit:
+    auto_commit_on_passing: true       # система коммитит при transition active→passing
+    message_template: "feat({feature_id}): {feature_name}\n\nImplements: {feature_id}\nVerified-By: {verification_command_hash}\nState-Transition: active→passing"
+
+# ============================================================
+# FILE SYSTEM POLICY
+# ============================================================
+filesystem:
+  destructive_commands:
+    deny_paths: ["/", "/etc/**", "/usr/**", "$HOME/**", "node_modules/**", ".git/**"]
+    allow_paths: [".tmp/**", "node_modules/**(only_rm)"]
+
+  protected_files: [".env*", "*.pem", "*.key", "secrets/**"]
+
+# ============================================================
+# CONCURRENT WRITES — closes B-DC-2 ($4 + 9 models lost)
+# ============================================================
+concurrent_writes:
+  enabled: true
+  lock_strategy: "per_file"
+
+  rules:
+    - file_pattern: "*.json"
+      max_concurrent_writers: 1
+      conflict_action: "block_with_suggestion"
+      suggestion_template: "Файл {file} уже пишется процессом {pid}. Используй {file}.{your_pid}.json и сольёшь при /handoff."
+
+    - file_pattern: "*.csv"
+      max_concurrent_writers: 1
+      conflict_action: "block_with_suggestion"
+
+    - file_pattern: "feature_list.json"
+      max_concurrent_writers: 1
+      conflict_action: "queue"  # writes ждут друг друга
+
+# ============================================================
+# BULK API GATE — closes B-DC-1 ($25 + 48h ban)
+# ============================================================
+bulk_api:
+  trigger_thresholds:
+    api_calls_in_loop: 50          # детект `for X in <list>: api_call()` где len(list)>=50
+    estimated_cost_usd: 2.00       # любой single bulk job >$2
+    estimated_duration_minutes: 5  # job длиннее 5 минут
+
+  required_checklist: ".harness/pre-launch-checklist.yaml"
+  block_until_checklist_passed: true
+
+  applies_to_providers:
+    - openai
+    - anthropic
+    - google_gemini
+    - voyage
+    - cohere
+    - openrouter
+
+# ============================================================
+# COST CONTROL — closes B-DC-3 ($13.49 Opus thinking surprise)
+# ============================================================
+cost:
+  preview_required:
+    when: ["bulk_api_triggered", "single_call_estimated_over_usd_1"]
+    show_to_user: true
+    require_confirm_when_over_usd: 2.00
+
+  per_feature_cap_usd: 5.00         # из domain-rules.yaml cost_policy
+  hard_cap_action: "auto_pause_feature"
+
+  monthly_cap_usd: 100.00
+
+  thinking_params:
+    # closes B-DC-3 + B-DC-6
+    auto_check_before_call: true
+    warn_if_thinking_enabled: ["opus-4-7", "opus-4-6", "claude-opus-*"]
+    require_explicit_thinking_budget: ["gemini-2.5-flash", "gemini-2.5-pro"]
+
+# ============================================================
+# SECRETS POLICY — closes B-RM-6 (.env scope)
+# ============================================================
+secrets:
+  per_project_scope: true            # каждый проект свой .env, не ~/.env.shared
+  forbidden_in_repo: ["*.env", "*.pem", "*.key", "credentials.json"]
+
+  allowed_keys_by_project:
+    # пример заполнения для нового проекта
+    default: []                      # пустой = ничего нельзя из ~/.env.shared
+    # romul: ["TELEGRAM_BOT_TOKEN_RAG", "OPENAI_API_KEY"]
+
+  forbidden_keys_by_project:
+    # globally forbidden — закрывает B-RM-5
+    default: ["ANTHROPIC_DIRECT_KEY"]   # только через подписку Claude Code
+
+# ============================================================
+# RATE LIMITING
+# ============================================================
+rate_limits:
+  llm_calls_per_minute: 30
+  llm_calls_per_session: 200
+  bash_calls_per_minute: 60
+
+# ============================================================
+# STUCK DETECTOR — closes B-CF-6 (3 hours skip-pagination)
+# ============================================================
+stuck_detector:
+  enabled: true
+
+  triggers:
+    - condition: "no_commit_no_test_pass_for_minutes"
+      threshold: 30
+      action: "prompt_user_in_SESSION.md"
+      message: "30 мин без commit/test-pass. Похоже на залипание? Запустить /stuck?"
+
+    - condition: "no_progress_for_minutes"
+      threshold: 45
+      action: "auto_trigger_stuck_protocol"
+
+    - condition: "same_error_pattern_count"
+      threshold: 2
+      action: "auto_trigger_parallel_research"
+      message: "Та же ошибка повторилась. Запускаю 3 параллельных subagent на диагностику."
+
+# ============================================================
+# AUDIT LOG
+# ============================================================
+audit:
+  log_file: ".harness/tools-audit.jsonl"
+  log_blocks: true
+  log_warns: true
+  log_costs: true

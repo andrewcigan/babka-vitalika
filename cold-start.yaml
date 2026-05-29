@@ -1,0 +1,46 @@
+# Cold-Start Test — 5 точных вопросов
+# Запускается командой /resume <project>
+# Цель: проверить что новая сессия может ответить на главные вопросы про проект ТОЛЬКО из репо.
+# Если хоть один вопрос не находит ответа в файлах — STATE подсистема разъехалась.
+
+questions:
+  - id: q1
+    question: "Что это за продукт и для кого?"
+    expected_source: ["docs/PRODUCT.md", "AGENTS.md"]
+    answer_pattern: "Один абзац: главная функция, целевой пользователь, ключевая ценность"
+    fail_action: "Прочитать docs/PRODUCT.md или ASK пользователю если документа нет"
+
+  - id: q2
+    question: "Какой сейчас bottleneck по 7-tuple оценке харнеса?"
+    expected_source: ["SESSION.md → Last Audit", ".harness/assessment.json"]
+    answer_pattern: "Название подсистемы (Instructions/State/Verification/Scope/Lifecycle/Learning/Cost-Safety) + балл + что улучшать"
+    fail_action: "Запустить /audit для свежей оценки"
+
+  - id: q3
+    question: "Какая фича сейчас active (WIP=1) и какая у неё verification_command?"
+    expected_source: ["feature_list.json → active"]
+    answer_pattern: "feat-XXX + название + verification_command строкой"
+    fail_action: "Если active=null — выбери из up_next через /feature <id>"
+
+  - id: q4
+    question: "Какие 3 последних архитектурных решения и почему?"
+    expected_source: ["docs/decisions/", "SESSION.md → Decisions Made"]
+    answer_pattern: "3 пункта: что решили + почему (контекст) + альтернативы"
+    fail_action: "Заглянуть в git log и SESSION.md прошлой сессии"
+
+  - id: q5
+    question: "Что НЕ нужно делать в этом проекте (anti-patterns)?"
+    expected_source: ["domain-rules.yaml → anti_patterns", "error-journal.md", "~/.claude/projects/<this>/memory/feedback_*.md"]
+    answer_pattern: "Минимум 3 anti-pattern + источник (какая боль их породила)"
+    fail_action: "Если меньше 3 — проект ещё свежий, error-journal начнёт наполняться"
+
+grading:
+  pass_threshold: 4  # из 5 вопросов
+  on_fail: "Не продолжать работу. Восстановить state через /handoff (load) + /audit. Если SESSION.md устарел >7 дней — спросить пользователя что было."
+
+# Evaluator-агент проверяет ответы (не сам агент работающий с сессией — это self-bias)
+external_evaluator:
+  model: "sonnet"
+  fresh_context: true
+  reads_only: ["docs/", "feature_list.json", "SESSION.md", "domain-rules.yaml", "error-journal.md"]
+  does_NOT_read: [".harness/assessment.json"]  # чтобы не было self-bias

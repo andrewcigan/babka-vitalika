@@ -1,0 +1,15 @@
+node_modules/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.token
+secrets/
+.gcal-token
+.n8n-token
+.harness/cost-log.json
+.harness/tools-audit.jsonl
+.DS_Store
+dist/
+build/
