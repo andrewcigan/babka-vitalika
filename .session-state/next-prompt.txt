@@ -1,0 +1,12 @@
+Продолжаем проект BabkaVitalika. Сделай /resume — прочитай AGENTS.md, SESSION.md, domain-rules.yaml, feature_list.json и docs/reference/calendar-from-sensei/HANDOFF.md.
+
+Краткий контекст (детали в файлах): это Telegram-бот для клиента — Google Calendar (создать/изменить/удалить события) + Gmail (выжимки новых писем в Telegram), всё на английском. Хостинг — Railway, БД — Railway Postgres. Календарь портируем с проекта Sensei-tsy (образец в docs/reference/).
+
+Ключевое архитектурное решение: бот на Railway ОРКЕСТРИРУЕТ и понимает сообщения (LLM), но Google-операции выполняет наш ОТДЕЛЬНЫЙ n8n workflow через ноды Gmail/Calendar с готовыми credential клиента «Mari» (Gmail OAuth2 + Google Calendar OAuth2). Бот дёргает workflow через webhook и токенов Google не хранит. Существующие 11 workflows клиента НЕ трогаем.
+
+Уже сделано: bootstrap harness, установлены n8n-mcp (полный режим, привязан к инстансу клиента techconstruction.app.n8n.cloud — креды в ~/.env.shared) + скиллы n8n-mcp-skills. Railway-токен в ~/.env.shared.
+
+Первые шаги этой сессии:
+1. Через n8n MCP посмотри существующие workflows клиента (особенно Marie AI Assistant и summarizer) — как там используются ноды с credential Mari. Это живой образец «как правильно».
+2. /architecture — зафиксируй контракт webhook бот↔n8n (какие команды бот шлёт, что получает) + треугольник. Заодно реши: формат почты (по одному письму / дайджест), частоту опроса Gmail, часовой пояс клиента.
+3. feat-001 (up_next) — собери ОТДЕЛЬНЫЙ n8n workflow с нодами Mari (используй n8n-mcp + скиллы).

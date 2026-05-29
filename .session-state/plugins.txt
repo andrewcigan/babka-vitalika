@@ -1,0 +1,67 @@
+Installed plugins:
+
+  ❯ claude-code-meta@claude-code-meta-marketplace
+    Version: 0.0.1
+    Scope: user
+    Status: ✔ enabled
+
+  ❯ claude-persona@claude-persona
+    Version: 0.1.0
+    Scope: user
+    Status: ✔ enabled
+
+  ❯ context7-plugin@context7-marketplace
+    Version: 1.0.0
+    Scope: user
+    Status: ✔ enabled
+
+  ❯ lazyweb@lazyweb
+    Version: 0.1.1
+    Scope: user
+    Status: ✔ enabled
+
+  ❯ n8n-mcp-skills@n8n-mcp-skills
+    Version: 1.9.0
+    Scope: user
+    Status: ✔ enabled
+
+  ❯ supabase@claude-plugins-official
+    Version: 0.1.5
+    Scope: user
+    Status: ✔ enabled
+
+  ❯ superpowers@claude-plugins-official
+    Version: 5.0.7
+    Scope: user
+    Status: ✔ enabled
+
+  ❯ telegram@claude-plugins-official
+    Version: 0.0.6
+    Scope: user
+    Status: ✔ enabled
+
+  ❯ tsygan-article-pipeline@tsygan-marketplace
+    Version: 0.1.0
+    Scope: user
+    Status: ✔ enabled
+
+  ❯ vibe-deep-fix@vibe-deep-fix
+    Version: 1.0.0
+    Scope: user
+    Status: ✔ enabled
+
+  ❯ vibe-dev-full@vibe-dev-v4
+    Version: 4.0.0
+    Scope: user
+    Status: ✔ enabled
+
+  ❯ vibe-dev-v5@vibe-dev-v5
+    Version: 5.2.0-alpha
+    Scope: user
+    Status: ✔ enabled
+
+  ❯ vibe-dev-workflow@vibe-dev-local
+    Version: 3.0.0
+    Scope: user
+    Status: ✔ enabled
+
