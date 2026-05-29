@@ -15,15 +15,6 @@
         "wave": 0,
         "blocks": ["feat-004"],
         "business_invariant": "ref: domain-rules.invariants.n8n_is_token_keeper_only"
-      },
-      {
-        "id": "feat-002",
-        "name": "Research/decision: голосовой ввод на Railway",
-        "description": "Нужен ли голосовой ввод (как в Sensei-tsy через локальный whisper) и если да — какой Whisper API (OpenAI / Groq) по цене/качеству/задержке. На Railway локального whisper нет. Output: решение + (если да) выбранный провайдер.",
-        "category": "integration",
-        "size_estimate": "S",
-        "wave": 0,
-        "business_invariant": "ref: domain-rules.open_decisions.voice_input"
       }
     ],
     "captured": [
@@ -90,7 +81,7 @@
       {
         "id": "feat-009",
         "name": "Почта: опрос новых входящих Gmail",
-        "description": "Периодический опрос Gmail API (новые входящие письма), отметка обработанных в processed_emails (idempotent, без двойных уведомлений при рестарте). Частота и фильтр — уточнить на /architecture.",
+        "description": "Периодический опрос Gmail API — ВСЕ новые входящие письма (решение заказчика 2026-05-29), отметка обработанных в processed_emails (idempotent, без двойных уведомлений при рестарте). Частота опроса — уточнить на /architecture.",
         "category": "integration",
         "size_estimate": "M",
         "wave": 3,
@@ -111,7 +102,15 @@
     "up_next": [],
     "active_list": [],
     "done": [],
-    "rejected": [],
+    "rejected": [
+      {
+        "id": "feat-002",
+        "name": "Голосовой ввод",
+        "description": "Распознавание речи на Railway (Whisper API). ОТКЛОНЕНО заказчиком 2026-05-29: 'пока только текст'. Можно вернуть отдельной фичей позже — на Railway нет локального whisper, потребуется Whisper API (OpenAI/Groq).",
+        "category": "integration",
+        "rejected_reason": "MVP — только текст (решение заказчика 2026-05-29)"
+      }
+    ],
     "superseded": [],
     "awaiting_reviewer": [],
     "awaiting_demo_milestone": [],
