@@ -5,16 +5,16 @@
   "mode": "FAST",
   "_note": "Черновой план по волнам, зафиксирован на /new-project. Детализация (affected_files, verification, integration_boundaries) — на /dev-plan после /architecture. Размеры S/M/L — абстрактная сложность, НЕ человеко-дни.",
   "features": {
-    "awaiting_research": [
+    "awaiting_research": [],
+    "up_next": [
       {
         "id": "feat-001",
-        "name": "Research: как n8n отдаёт Google access_token боту",
-        "description": "Найти и проверить рабочий механизм, которым внешний n8n (облако) отдаёт нашему боту свежий Google access_token (Calendar+Gmail scopes). n8n по дизайну прячет креды — нужен проверенный способ (n8n webhook workflow / Public API / отдельный refresh-flow). Output: docs/research/n8n-token-bridge.md с рабочим вариантом + 2-3 альтернативы.",
+        "name": "n8n webhook-workflow: операции Google через ноды Mari",
+        "description": "Создать ОТДЕЛЬНЫЙ n8n workflow (существующие 11 workflows клиента НЕ трогать) с webhook-эндпоинтами: создать/изменить/удалить событие Calendar, проверка занятости слота, список новых писем Gmail, тело письма. Ноды Gmail/Google Calendar используют готовые credential клиента — 'Mari' Gmail OAuth2 + 'Mari' Google Calendar OAuth2 (созданы 11 May). Зафиксировать контракт вход/выход (что бот шлёт в webhook, что получает). Строится через n8n-mcp + скиллы n8n. Output: рабочий workflow + docs/n8n-workflow-contract.md.",
         "category": "integration",
-        "size_estimate": "S",
-        "wave": 0,
-        "blocks": ["feat-004"],
-        "business_invariant": "ref: domain-rules.invariants.n8n_is_token_keeper_only"
+        "size_estimate": "M",
+        "wave": 1,
+        "business_invariant": "ref: domain-rules.invariants.n8n_executes_google_via_nodes"
       }
     ],
     "captured": [
@@ -29,13 +29,13 @@
       },
       {
         "id": "feat-004",
-        "name": "Мост к n8n: получение Google access_token",
-        "description": "Модуль token-bridge: бот запрашивает у n8n свежий Google access_token (по механизму из feat-001), кэширует, обновляет при истечении. Единственная точка обращения к n8n.",
+        "name": "HTTP-клиент бота к n8n webhook",
+        "description": "Модуль в боте, который дёргает webhook-эндпоинты нашего n8n workflow (из feat-001): шлёт команды (создать/изменить/удалить событие, проверка занятости, новые письма, тело письма) и разбирает ответы. Единственная точка работы бота с Google — через n8n. Боту НЕ нужны токены Google.",
         "category": "integration",
         "size_estimate": "M",
         "wave": 1,
         "dependencies": ["feat-001", "feat-003"],
-        "business_invariant": "ref: domain-rules.invariants.n8n_is_token_keeper_only"
+        "business_invariant": "ref: domain-rules.invariants.n8n_executes_google_via_nodes"
       },
       {
         "id": "feat-005",
@@ -99,7 +99,6 @@
         "business_invariant": "ref: domain-rules.invariants.product_language_english"
       }
     ],
-    "up_next": [],
     "active_list": [],
     "done": [],
     "rejected": [

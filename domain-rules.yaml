@@ -12,8 +12,9 @@ product_semantics:
     Telegram-бот, через который конечный пользователь (англоязычный клиент) обычным языком
     управляет своим Google Calendar — создаёт, переносит, отменяет события, видит проверку
     занятости слота — и получает в Telegram краткие выжимки новых входящих писем Gmail.
-    Бот хостится на Railway, сам ходит в Google API, а доступ к Google (OAuth) держит и
-    отдаёт по запросу внешний n8n (в облаке клиента). Google Drive — отложено.
+    Бот хостится на Railway и оркестрирует, а операции с Google (Calendar+Gmail) выполняет через
+    наш отдельный n8n workflow, чьи ноды используют готовые OAuth2-credential клиента
+    (Mari — Gmail + Calendar). n8n держит OAuth и сам обновляет токены. Google Drive — отложено.
 
   product_phases:
     phase_1_mvp:
@@ -76,10 +77,10 @@ invariants:
     mechanism: "DISCIPLINE-RULE + review: все строки UI в одном модуле (i18n/en.ts), code-review проверяет отсутствие кириллицы в user-facing строках."
     test_assertion: "grep кириллицы по модулю UI-строк = 0 совпадений; e2e: ответы бота на английском"
 
-  - rule: "n8n_is_token_keeper_only"
-    description: "n8n хранит Google OAuth-подключение и по запросу отдаёт боту свежий access_token. n8n НЕ выполняет операций календаря/почты. Все вызовы Google API делает бот."
-    mechanism: "Архитектурный контракт: единственная точка обращения к n8n — модуль token-bridge. Механизм отдачи токена — research feat-001 (НЕ гадать, n8n прячет креды по дизайну)."
-    test_assertion: "В коде нет вызовов n8n кроме token-bridge; календарь/почта дёргают Google API напрямую"
+  - rule: "n8n_executes_google_via_nodes"
+    description: "Операции с Google (Calendar CRUD + проверка занятости, чтение Gmail) выполняет НАШ отдельный n8n workflow через ноды Gmail/Google Calendar, использующие готовые OAuth2-credential клиента (Mari — Gmail OAuth2 + Google Calendar OAuth2, созданы 11 May). Бот НЕ ходит в Google API напрямую и НЕ хранит токенов — он дёргает webhook нашего workflow. Причина: n8n по дизайну не отдаёт OAuth-токен наружу, готовый credential используется только нодами."
+    mechanism: "Архитектурный контракт: бот общается с Google ТОЛЬКО через HTTP-вызовы к webhook нашего n8n workflow. Существующие 11 workflows клиента НЕ трогаем — создаём отдельный."
+    test_assertion: "В коде бота нет прямых вызовов googleapis Calendar/Gmail; все Google-операции идут через HTTP к n8n webhook"
 
   - rule: "verify_in_real_google"
     description: "«Готово» для любой Google-операции = подтверждённое состояние в реальном Google (events.get / Gmail messages.get), НЕ запись status='active' в нашей Postgres."
@@ -183,8 +184,12 @@ cost_policy:
 # ============================================================
 open_decisions:
   - id: "n8n_token_mechanism"
-    question: "Каким именно способом n8n отдаёт боту свежий Google access_token?"
-    status: "research feat-001 (блокирует всё)"
+    question: "Как бот работает с Google через n8n?"
+    status: >
+      RESOLVED 2026-05-29: n8n НЕ отдаёт токен. Создаём ОТДЕЛЬНЫЙ n8n workflow с webhook;
+      его ноды Gmail/Calendar используют готовые credential клиента (Mari Gmail OAuth2 +
+      Mari Google Calendar OAuth2, созданы 11 May). Бот дёргает webhook. Существующие 11
+      workflows клиента не трогаем. feat-001 переформулирован из research в design+build.
   - id: "voice_input"
     question: "Нужен ли голосовой ввод?"
     status: "RESOLVED 2026-05-29: только текст (голос отложен, feat-002 rejected)"

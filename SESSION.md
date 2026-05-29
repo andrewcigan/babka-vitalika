@@ -21,6 +21,25 @@ Telegram) + **Gmail** (выжимки новых писем в Telegram). OAuth 
   n8n уже в облаке (платит клиент), всё на английском.
 - Черновой план по волнам (feature_list.json, 10 фич, волны 0-3).
 
+## Инструменты n8n (установлены 2026-05-29)
+
+- **MCP n8n-mcp** (czlonkowski v2.56.0) — user scope, ПОЛНЫЙ режим (20 инструментов), привязан к
+  инстансу клиента `techconstruction.app.n8n.cloud`. Креды в `~/.env.shared` (N8N_API_URL + N8N_API_KEY).
+- **Плагин скиллов n8n-mcp-skills** v1.9.0 (czlonkowski) — 7 скиллов (выражения, паттерны workflow,
+  валидация, ноды, JS/Python). **Активируются после рестарта сессии.**
+- **Разведка инстанса:** 11 workflows у клиента — Telegram-боты (TechReceipt, UVSReceipt, W9),
+  "AI Telegram Bot Agent: Smart Assistant & Content Summarizer", "Morning Briefing", "Onboarding Bot
+  Document Intake", "Marie AI Assistant".
+
+## Уточнение роли n8n (2026-05-29, решение заказчика)
+
+n8n НЕ отдаёт токен наружу — он **выполняет** Google-операции нодами. Готовые credential клиента:
+**«Mari» Gmail OAuth2 API** + **«Mari» Google Calendar OAuth2 API** (созданы 11 May).
+- feat-001 (бывший research) → теперь: создать ОТДЕЛЬНЫЙ n8n workflow с webhook; ноды Gmail/Calendar
+  используют эти credential. Бот дёргает webhook (feat-004), токенов Google не хранит.
+- Существующие 11 workflows клиента НЕ трогать.
+- Workflow собирать через n8n-mcp + скиллы n8n (после рестарта сессии).
+
 ## ⚡ NEXT SESSION / следующий шаг
 
 **`/architecture`** — V0 архитектура треугольника бот(Railway) ↔ n8n(OAuth) ↔ Google(Calendar+Gmail).
