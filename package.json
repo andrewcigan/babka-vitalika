@@ -1,0 +1,27 @@
+{
+  "name": "babka-vitalika-bot",
+  "version": "0.1.0",
+  "description": "Telegram bot that talks to Google Calendar and Gmail via an n8n webhook gateway.",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "start": "node dist/index.js",
+    "dev": "tsc -p . --watch & node --watch dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "grammy": "^1.30.0",
+    "pg": "^8.13.1",
+    "pino": "^9.5.0",
+    "undici": "^7.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/pg": "^8.11.10",
+    "typescript": "^5.7.2"
+  }
+}
