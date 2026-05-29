@@ -6,17 +6,8 @@
   "_note": "Черновой план по волнам, зафиксирован на /new-project. Детализация (affected_files, verification, integration_boundaries) — на /dev-plan после /architecture. Размеры S/M/L — абстрактная сложность, НЕ человеко-дни.",
   "features": {
     "awaiting_research": [],
-    "up_next": [
-      {
-        "id": "feat-001",
-        "name": "n8n webhook-workflow: операции Google через ноды Mari",
-        "description": "Создать ОТДЕЛЬНЫЙ n8n workflow (существующие 11 workflows клиента НЕ трогать) с webhook-эндпоинтами: создать/изменить/удалить событие Calendar, проверка занятости слота, список новых писем Gmail, тело письма. Ноды Gmail/Google Calendar используют готовые credential клиента — 'Mari' Gmail OAuth2 + 'Mari' Google Calendar OAuth2 (созданы 11 May). Зафиксировать контракт вход/выход (что бот шлёт в webhook, что получает). Строится через n8n-mcp + скиллы n8n. Output: рабочий workflow + docs/n8n-workflow-contract.md.",
-        "category": "integration",
-        "size_estimate": "M",
-        "wave": 1,
-        "business_invariant": "ref: domain-rules.invariants.n8n_executes_google_via_nodes"
-      }
-    ],
+    "up_next": [],
+    "active_list": [],
     "captured": [
       {
         "id": "feat-003",
@@ -99,8 +90,30 @@
         "business_invariant": "ref: domain-rules.invariants.product_language_english"
       }
     ],
-    "active_list": [],
-    "done": [],
+    "done": [
+      {
+        "id": "feat-001",
+        "name": "n8n webhook-workflow: операции Google через ноды Mari",
+        "description": "Создан n8n workflow id=32kQ1TjwzpRxcPZn (16 нод, active) с webhook+Switch+ветками для 6 actions: calendar.createEvent / modifyEvent / cancelEvent / listEvents + gmail.listNew / getMessage. Все Calendar/Gmail ноды используют credential Mari, calendar ID = donnellycd@gmail.com (mode=list). Header Auth credential id=6jJgWCR0vCWqftod, secret в ~/.env.shared:N8N_WEBHOOK_SECRET_BABKAVITALIKA.",
+        "category": "integration",
+        "size_estimate": "M",
+        "wave": 1,
+        "n8n_workflow_id": "32kQ1TjwzpRxcPZn",
+        "webhook_url": "https://techconstruction.app.n8n.cloud/webhook/babka-vitalika",
+        "verification_passed": [
+          "calendar.listEvents on empty 2030 interval → HTTP 200, ok:true, data.events:[]",
+          "calendar.listEvents on today → HTTP 200, ok:true, data.events:[] (no events today)",
+          "gmail.listNew with after=2099 → HTTP 200, ok:true, data.messages:[]",
+          "wrong X-Webhook-Secret → HTTP 403 Authorization data is wrong"
+        ],
+        "verification_pending": [
+          "calendar.createEvent / modifyEvent / cancelEvent — требуют создания реальных событий в календаре клиента, тестируем при сборке feat-004 (HTTP-клиент бота)",
+          "gmail.getMessage — требует реального message_id, тестируем при сборке feat-009 (опрос Gmail)"
+        ],
+        "business_invariant": "ref: domain-rules.invariants.n8n_executes_google_via_nodes",
+        "done_date": "2026-05-29"
+      }
+    ],
     "rejected": [
       {
         "id": "feat-002",

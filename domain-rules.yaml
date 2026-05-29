@@ -135,10 +135,11 @@ runtime_constraints:
   node_version: ">=20"
   hosting: "Railway (бот + Postgres)"
   os_compat: [linux]              # Railway-контейнер, НЕ Mac — никаких локальных зависимостей (whisper.cpp)
+  timezone: "America/New York (GMT-4)"   # все user-facing даты/времена в этом TZ
   external_services:
-    - "n8n (облако клиента) — держатель Google OAuth"
-    - "Google Calendar API + Gmail API"
-    - "OpenRouter (LLM)"
+    - "n8n (облако клиента, techconstruction.app.n8n.cloud) — исполнитель Google-операций через ноды"
+    - "Google Calendar API + Gmail API (через ноды n8n, не напрямую)"
+    - "OpenRouter (LLM — Haiku 4.5)"
     - "Telegram Bot API"
 
 # ============================================================
@@ -195,13 +196,25 @@ open_decisions:
     status: "RESOLVED 2026-05-29: только текст (голос отложен, feat-002 rejected)"
   - id: "email_scope"
     question: "Какие письма уведомлять?"
-    status: "RESOLVED 2026-05-29: ВСЕ входящие. Открыто только: частота опроса (на /architecture)"
+    status: "RESOLVED 2026-05-29: ВСЕ входящие."
+
+  - id: "email_polling_frequency"
+    question: "Как часто опрашивать Gmail на новые письма?"
+    status: >
+      RESOLVED 2026-05-29: КАЖДЫЕ 15 МИНУТ. Cron в боте, опрос Gmail через webhook n8n.
+      Среднее запаздывание ~7 мин — приемлемо для MVP. Если клиент захочет real-time —
+      переключиться на Gmail push (watch + Pub/Sub) отдельной фичей.
   - id: "email_digest_format"
     question: "Выжимка по одному письму сразу или дайджест пачкой раз в период?"
-    status: "open, уточнить на /architecture"
+    status: >
+      RESOLVED 2026-05-29: ПО ОДНОМУ — на каждое новое письмо отдельное Telegram-сообщение
+      с выжимкой (отправитель / тема / 2-3 строки сути). Решение заказчика 2026-05-29.
   - id: "timezone"
     question: "Часовой пояс клиента (Sensei-tsy был Europe/Minsk) — какой у англоязычного клиента?"
-    status: "open, уточнить на /architecture"
+    status: >
+      RESOLVED 2026-05-29: America/New York (GMT-4). Evidence: совпадает с system prompt
+      в живом Marie AI Assistant Demo workflow клиента. Все user-facing даты/времена в боте
+      и в Google Calendar — в этом TZ. Если клиент в будущем переедет/полетит — отдельная фича.
 
 # ============================================================
 # FRESHNESS

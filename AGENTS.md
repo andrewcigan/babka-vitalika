@@ -48,8 +48,13 @@ Telegram (англ. UI)
 Postgres на Railway (зеркало событий, обработанные письма, audit-журнал)
 ```
 
-**n8n credentials клиента (готовы, использовать в нодах нового workflow):** «Mari» Gmail OAuth2 API +
-«Mari» Google Calendar OAuth2 API (созданы 11 May). Существующие 11 workflows клиента НЕ трогаем.
+**n8n credentials клиента (готовы, использовать в нодах нового workflow):**
+- «Mari» Gmail OAuth2 API — id `Md2WkyvHQvxM6hIm` (тип `gmailOAuth2`)
+- «Mari» Google Calendar OAuth2 API — id `XTKqqE3rzW0zdb6b` (тип `googleCalendarOAuth2Api`)
+
+ID получены 2026-05-29 через тест-workflow `SPy33sUxuJPPodnf` (заказчик привязал creds к
+двум нодам, переслал JSON; тест-workflow можно удалить). Существующие 11 workflows клиента
+НЕ трогаем.
 
 - **n8n = только держатель и поставщик доступа** (вариант, выбранный заказчиком). НЕ выполняет
   операции календаря/почты. Как именно n8n отдаёт токен наружу — см. research feat-001
