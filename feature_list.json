@@ -1,138 +1,260 @@
 {
-  "version": "5.2.0",
+  "version": "5.3.0",
   "wip_limit": 1,
   "active": null,
   "mode": "FAST",
-  "_note": "Черновой план по волнам, зафиксирован на /new-project. Детализация (affected_files, verification, integration_boundaries) — на /dev-plan после /architecture. Размеры S/M/L — абстрактная сложность, НЕ человеко-дни.",
+  "_note": "Перепланирован 2026-05-30 после решения заказчика: полный Marie Demo функционал + наши надстройки (audit, dedup, 4-button conflict card, persistent memory, whitelist, mail send с confirm). LLM = Sonnet 4.6 через прямой Anthropic API. Voice = OpenAI Whisper API.",
   "features": {
     "awaiting_research": [],
-    "up_next": [],
-    "active_list": [],
-    "captured": [
-      {
-        "id": "feat-003",
-        "name": "Каркас бота на Railway",
-        "description": "Скелет TypeScript-бота (grammy Telegram), деплой на Railway, подключение к Railway Postgres, healthcheck, конфиг через env vars. Бот отвечает /start и /help на английском.",
-        "category": "infra",
-        "size_estimate": "M",
-        "wave": 1,
-        "business_invariant": "ref: domain-rules.invariants.product_language_english"
-      },
-      {
-        "id": "feat-004",
-        "name": "HTTP-клиент бота к n8n webhook",
-        "description": "Модуль в боте, который дёргает webhook-эндпоинты нашего n8n workflow (из feat-001): шлёт команды (создать/изменить/удалить событие, проверка занятости, новые письма, тело письма) и разбирает ответы. Единственная точка работы бота с Google — через n8n. Боту НЕ нужны токены Google.",
-        "category": "integration",
-        "size_estimate": "M",
-        "wave": 1,
-        "dependencies": ["feat-001", "feat-003"],
-        "business_invariant": "ref: domain-rules.invariants.n8n_executes_google_via_nodes"
-      },
+    "up_next": [
       {
         "id": "feat-005",
-        "name": "Модель данных (Postgres)",
-        "description": "Схема Postgres: calendar_events (зеркало + dedup_key + status + audit), calendar_event_audit (append-only), processed_emails (gmail_message_id UNIQUE). ОБЯЗАТЕЛЬНО критический data-model reviewer (Opus) перед реализацией — наследует решения data-model-review.md из Sensei-tsy + добавляет почту.",
+        "name": "Модель данных Postgres (8 таблиц, после reviewer)",
+        "description": "Полная схема Postgres из 8 таблиц по рекомендации Opus-reviewer (docs/features/feat-005/data-model-review.md): (1) conversation_messages с metadata (input_kind, voice_transcript_raw, llm_metadata_json) — memory + cost-tracking; (2) calendar_events со стабильным dedup_key = chat_id:telegram_message_id:event_seq и discriminated columns (start_date DATE для all-day vs start_at TIMESTAMPTZ для timed); (3) processed_emails (gmail_message_id UNIQUE + notification_telegram_message_id + structured summary); (4) outgoing_emails (поглощает pending_outgoing_emails — first-class lifecycle pending_confirm→sent→failed→cancelled); (5) pending_conflict_decisions с original_event_start/end для Reschedule old; (6) pending_event_edits с FSM (awaiting_button/awaiting_pick); (7) audit_log универсальный append-only с CHECK enum entity_type + триггер REJECT UPDATE/DELETE; (8) system_kv для last_polled_at Gmail (защита от потери писем при рестарте). Готовая SQL в data-model-review.md.",
         "category": "data",
-        "size_estimate": "M",
+        "size_estimate": "L",
         "wave": 1,
         "dependencies": ["feat-003"],
         "requires_data_model_review": true,
-        "business_invariant": "ref: domain-rules.invariants.calendar_event_traceable"
+        "data_model_review_status": "passed 2026-05-30",
+        "data_model_review_file": "docs/features/feat-005/data-model-review.md",
+        "business_invariant": "ref: domain-rules.invariants.calendar_event_traceable + memory_in_postgres + email_idempotent_no_double_notify + mail_send_traceable"
+      }
+    ],
+    "active_list": [],
+    "captured": [
+      {
+        "id": "feat-010",
+        "name": "Whitelist chat_id middleware",
+        "description": "grammy middleware: бот принимает сообщения только от chat_id из env TELEGRAM_ALLOWED_CHAT_IDS. Чужой chat → молчаливый ignore + warn в лог. Тест: POST с чужим chat → нет ответа.",
+        "category": "security",
+        "size_estimate": "S",
+        "wave": 1,
+        "dependencies": ["feat-003"],
+        "business_invariant": "ref: domain-rules.invariants.whitelist_chat_ids"
       },
       {
-        "id": "feat-006",
-        "name": "Календарь: детекция и создание события",
-        "description": "Детектор событий из текста (перенос логики Sensei-tsy detector на английские промпты, Haiku/OpenRouter) → создание в Google Calendar через бот → карточка 'Created…' в Telegram + [Delete]. all-day vs timed логика как в образце.",
+        "id": "feat-011",
+        "name": "Anthropic SDK клиент + JSON-schema валидатор",
+        "description": "src/llm/anthropic-client.ts через @anthropic-ai/sdk. Модель claude-sonnet-4-6. Универсальная функция callJsonSchema<T>(systemPrompt, userPrompt, schema) → T с retry при невалидном JSON. Env ANTHROPIC_API_KEY на Railway (локально берём из ANTHROPIC_DIRECT_KEY).",
+        "category": "infra",
+        "size_estimate": "M",
+        "wave": 1,
+        "dependencies": ["feat-003"],
+        "business_invariant": "ref: domain-rules.invariants.llm_provider_anthropic_sonnet + no_tool_use"
+      },
+      {
+        "id": "feat-012",
+        "name": "Voice input через OpenAI Whisper API",
+        "description": "src/voice/whisper-client.ts. На bot.on('message:voice') → getFile Telegram API → POST в OpenAI /v1/audio/transcriptions (whisper-1) → текст. Дальше как обычное text-сообщение. Hallucination detector (пустой voice → 'Спасибо за просмотр' и т.п.) — фильтр.",
+        "category": "integration",
+        "size_estimate": "M",
+        "wave": 2,
+        "dependencies": ["feat-003", "feat-005", "feat-010"],
+        "business_invariant": "ref: domain-rules.invariants.voice_input_via_whisper_api"
+      },
+      {
+        "id": "feat-020",
+        "name": "Conversation memory в Postgres",
+        "description": "Таблица conversation_messages (chat_id, role, content_text, created_at). При каждом LLM-вызове — подгрузить последние 50 сообщений как контекст. Сохранять user input + bot output. Переживает рестарт Railway.",
+        "category": "infra",
+        "size_estimate": "M",
+        "wave": 2,
+        "dependencies": ["feat-005", "feat-011"],
+        "business_invariant": "ref: domain-rules.invariants.memory_in_postgres"
+      },
+      {
+        "id": "feat-013",
+        "name": "Natural language intent router",
+        "description": "src/intent-router.ts (Sonnet 4.6 через feat-011) → JSON { intent: 'schedule|modify|cancel|query_calendar|query_mail|send_mail|other', confidence, ... }. Получает текст + memory контекст → определяет что делать. Slash-команды остаются как быстрый fallback.",
         "category": "workflow",
         "size_estimate": "L",
         "wave": 2,
-        "dependencies": ["feat-004", "feat-005"],
+        "dependencies": ["feat-011", "feat-020"],
+        "business_invariant": "ref: domain-rules.invariants.natural_language_primary + no_tool_use"
+      },
+      {
+        "id": "feat-014",
+        "name": "Event detector (text → event JSON)",
+        "description": "src/calendar/event-detector.ts (Sonnet 4.6) → JSON { title, start_iso, end_iso, all_day, location?, description?, confidence, needs_clarification }. all-day vs timed по семантике (отпуск/ДР vs встреча/звонок). Часовой пояс America/New_York. Не создаёт пока confidence < threshold — шлёт уточнение.",
+        "category": "workflow",
+        "size_estimate": "L",
+        "wave": 2,
+        "dependencies": ["feat-013"],
         "business_invariant": "ref: domain-rules.invariants.no_silent_calendar_creation"
       },
       {
-        "id": "feat-007",
-        "name": "Календарь: правка / перенос / отмена через текст",
-        "description": "Intent-детектор (create/modify/cancel/none) + fuzzy-матчер целевого события + карточка подтверждения [Yes]/[Cancel]. Перенос времени/даты, отмена. Перенос логики feat-12c из Sensei-tsy.",
+        "id": "feat-015",
+        "name": "Create event + Telegram карточка",
+        "description": "Получает event JSON от feat-014 → проверка конфликт через feat-016 → если ОК → calendar.createEvent через n8n → запись в calendar_events (dedup_key, status='pending'→'active', etag) → карточка 'Created…' в Telegram + кнопка [🗑 Delete]. Audit-row.",
         "category": "workflow",
         "size_estimate": "L",
-        "wave": 2,
-        "dependencies": ["feat-006"],
-        "business_invariant": "ref: domain-rules.invariants.verify_in_real_google"
-      },
-      {
-        "id": "feat-008",
-        "name": "Календарь: проверка занятости слота",
-        "description": "Перед созданием timed-события — проверка занятости через Google events.list. Если занято — карточка конфликта [Book anyway]/[Don't book]/[Reschedule existing]. Перенос feat-12e из Sensei-tsy.",
-        "category": "workflow",
-        "size_estimate": "M",
-        "wave": 2,
-        "dependencies": ["feat-007"],
-        "business_invariant": "ref: domain-rules.disambiguation_triggers.slot_busy"
-      },
-      {
-        "id": "feat-009",
-        "name": "Почта: опрос новых входящих Gmail",
-        "description": "Периодический опрос Gmail API — ВСЕ новые входящие письма (решение заказчика 2026-05-29), отметка обработанных в processed_emails (idempotent, без двойных уведомлений при рестарте). Частота опроса — уточнить на /architecture.",
-        "category": "integration",
-        "size_estimate": "M",
         "wave": 3,
-        "dependencies": ["feat-004", "feat-005"],
+        "dependencies": ["feat-014", "feat-016", "feat-021"],
+        "business_invariant": "ref: domain-rules.invariants.calendar_event_traceable + calendar_idempotent_no_duplicates"
+      },
+      {
+        "id": "feat-016",
+        "name": "Conflict check + 4-button conflict card",
+        "description": "Перед createEvent — calendar.listEvents в окне ±1h → если есть пересечение (skipAllDay=true) → карточка [📌 Book anyway] [✌ Skip new] [🗑 Cancel old] [🔄 Reschedule old]. Состояние в pending_conflict_decisions. Callback handler по каждой кнопке. Reschedule old = stateful wait текстового ответа с новым временем для X.",
+        "category": "workflow",
+        "size_estimate": "L",
+        "wave": 3,
+        "dependencies": ["feat-015"],
+        "business_invariant": "ref: domain-rules.invariants.conflict_card_4_buttons"
+      },
+      {
+        "id": "feat-017",
+        "name": "Modify / cancel event flow",
+        "description": "Из intent='modify' или 'cancel' → fuzzy-матчер целевого события (по описанию из текста vs активные события за ±30 дней) → confirm-карточка [✅ Yes] [✖ Cancel]. По [Yes] → calendar.modifyEvent или cancelEvent через n8n → запись в audit. Если найдено несколько — карточка выбора кандидатов.",
+        "category": "workflow",
+        "size_estimate": "L",
+        "wave": 3,
+        "dependencies": ["feat-015"],
+        "business_invariant": "ref: domain-rules.invariants.verify_in_real_google + calendar_event_audit_trail"
+      },
+      {
+        "id": "feat-018",
+        "name": "Email polling + summarizer + push в Telegram",
+        "description": "Cron каждые 15 мин: gmail.listNew (after=last_polled_at) → для каждого нового message_id (не в processed_emails) → gmail.getMessage → Sonnet 4.6 выжимка (sender, subject, action_items, urgency, 2-3 строки сути) → Telegram push (формат: по одному письму). Запись в processed_emails (UNIQUE gmail_message_id защищает от двойных уведомлений при рестарте).",
+        "category": "workflow",
+        "size_estimate": "L",
+        "wave": 4,
+        "dependencies": ["feat-005", "feat-011", "feat-021"],
         "business_invariant": "ref: domain-rules.invariants.email_idempotent_no_double_notify"
       },
       {
-        "id": "feat-010",
-        "name": "Почта: выжимка письма + уведомление в Telegram",
-        "description": "Для каждого нового письма — краткая выжимка (LLM, Haiku/OpenRouter, английский) → уведомление в Telegram с отправителем/темой/выжимкой. Формат (по одному / дайджест) — уточнить на /architecture.",
+        "id": "feat-019",
+        "name": "Mail send flow + confirm card",
+        "description": "Из intent='send_mail' → AI извлекает recipient/subject/body → запись в pending_outgoing_emails → карточка с превью [✉️ Send] [✖ Cancel]. По [Send] → gmail.sendMessage через n8n (требует доп. action в n8n workflow). НИКОГДА не отправляется автоматически.",
         "category": "workflow",
         "size_estimate": "M",
-        "wave": 3,
-        "dependencies": ["feat-009"],
-        "business_invariant": "ref: domain-rules.invariants.product_language_english"
+        "wave": 4,
+        "dependencies": ["feat-013", "feat-005"],
+        "business_invariant": "ref: domain-rules.invariants.mail_send_requires_confirm_card",
+        "n8n_workflow_change_required": "Добавить action gmail.sendMessage в существующий workflow 32kQ1TjwzpRxcPZn (нода gmail message:send + Set Response + ветка Switch)"
+      },
+      {
+        "id": "feat-021",
+        "name": "Audit log infrastructure",
+        "description": "Универсальная таблица audit_log (entity_type, entity_id, action, actor, before_json, after_json, reason, performed_at). Append-only (триггер на UPDATE/DELETE = REJECT). Используется feat-015/feat-017/feat-018/feat-019. Соблюдение инварианта calendar_event_audit_trail.",
+        "category": "infra",
+        "size_estimate": "S",
+        "wave": 1,
+        "dependencies": ["feat-005"],
+        "business_invariant": "ref: domain-rules.invariants.calendar_event_audit_trail"
+      },
+      {
+        "id": "feat-022",
+        "name": "Edit-message UX pattern (заменить 'Working on it…')",
+        "description": "Уже сделано в текущем боте (commit 1eba9e3) — placeholder message заменяется через ctx.api.editMessageText финальным текстом. Зафиксировать как универсальный паттерн withProgress() для всех новых long-running команд.",
+        "category": "ux",
+        "size_estimate": "S",
+        "wave": 1,
+        "status": "done_inline_in_feat-003"
+      },
+      {
+        "id": "feat-024",
+        "name": "Cleanup cron для pending-таблиц",
+        "description": "Cron каждые 5 минут: DELETE FROM pending_conflict_decisions / pending_event_edits / outgoing_emails(state='pending_confirm') WHERE expires_at < now(). Защита от «забытых» карточек если пользователь не нажал кнопку. Без него БД будет расти грязью. По рекомендации reviewer.",
+        "category": "infra",
+        "size_estimate": "S",
+        "wave": 2,
+        "dependencies": ["feat-005"],
+        "business_invariant": "ref: domain-rules.invariants.pending_expiry_cleanup"
+      },
+      {
+        "id": "feat-025",
+        "name": "Recovery orphan calendar_events (status=pending без gcal_event_id)",
+        "description": "Cron каждые 10 минут: SELECT * FROM calendar_events WHERE status='pending' AND gcal_event_id IS NULL AND created_at < now() - 5min — либо ретраить calendar.createEvent (с тем же dedup_key — Google API идемпотентен по iCalUID), либо помечать status='failed' и нотифицировать в Telegram. Защита от ситуации «бот упал между insert в нашу БД и Google insert». Как в Sensei-tsy. По рекомендации reviewer.",
+        "category": "infra",
+        "size_estimate": "M",
+        "wave": 2,
+        "dependencies": ["feat-005", "feat-015"],
+        "business_invariant": "ref: domain-rules.invariants.calendar_idempotent_no_duplicates"
       }
     ],
     "done": [
       {
         "id": "feat-001",
-        "name": "n8n webhook-workflow: операции Google через ноды Mari",
-        "description": "Создан n8n workflow id=32kQ1TjwzpRxcPZn (16 нод, active) с webhook+Switch+ветками для 6 actions: calendar.createEvent / modifyEvent / cancelEvent / listEvents + gmail.listNew / getMessage. Все Calendar/Gmail ноды используют credential Mari, calendar ID = donnellycd@gmail.com (mode=list). Header Auth credential id=6jJgWCR0vCWqftod, secret в ~/.env.shared:N8N_WEBHOOK_SECRET_BABKAVITALIKA.",
+        "name": "n8n webhook-workflow: 6 actions Google через ноды Mari",
+        "description": "n8n workflow 32kQ1TjwzpRxcPZn (16 нод, active) с calendar.createEvent / modifyEvent / cancelEvent / listEvents + gmail.listNew / getMessage. Все ноды на credential Mari (donnellycd@gmail.com). Header Auth secret в env. Smoke-тесты пройдены для read-only actions.",
         "category": "integration",
         "size_estimate": "M",
         "wave": 1,
         "n8n_workflow_id": "32kQ1TjwzpRxcPZn",
         "webhook_url": "https://techconstruction.app.n8n.cloud/webhook/babka-vitalika",
-        "verification_passed": [
-          "calendar.listEvents on empty 2030 interval → HTTP 200, ok:true, data.events:[]",
-          "calendar.listEvents on today → HTTP 200, ok:true, data.events:[] (no events today)",
-          "gmail.listNew with after=2099 → HTTP 200, ok:true, data.messages:[]",
-          "wrong X-Webhook-Secret → HTTP 403 Authorization data is wrong"
-        ],
-        "verification_pending": [
-          "calendar.createEvent / modifyEvent / cancelEvent — требуют создания реальных событий в календаре клиента, тестируем при сборке feat-004 (HTTP-клиент бота)",
-          "gmail.getMessage — требует реального message_id, тестируем при сборке feat-009 (опрос Gmail)"
-        ],
+        "done_date": "2026-05-29",
         "business_invariant": "ref: domain-rules.invariants.n8n_executes_google_via_nodes",
-        "done_date": "2026-05-29"
+        "follow_up": "feat-019 потребует добавить gmail.sendMessage action в этот workflow"
+      },
+      {
+        "id": "feat-003",
+        "name": "Каркас бота на Railway (TypeScript + grammy + healthcheck)",
+        "description": "Скелет TypeScript-бота на Node 20 + grammy + pino. Деплой на Railway (project c167ab2f, service bot). Healthcheck /healthz. Env-конфиг (TELEGRAM_BOT_TOKEN, N8N_WEBHOOK_URL/SECRET, NODE_ENV, PRODUCT_TIMEZONE). Команды /start /help /today /tomorrow /week /mail работают end-to-end через webhook. Edit-message pattern (withProgress) — placeholder заменяется финальным текстом.",
+        "category": "infra",
+        "size_estimate": "M",
+        "wave": 1,
+        "done_date": "2026-05-30",
+        "telegram_bot": "@google_assistant_ai_bot (id 8915264831)",
+        "railway_project_id": "c167ab2f-431d-4c35-9084-22771b3c8f9a",
+        "github_repo": "https://github.com/andrewcigan/babka-vitalika",
+        "business_invariant": "ref: domain-rules.invariants.product_language_english",
+        "verification_passed": [
+          "/today, /tomorrow, /week, /mail отвечают английскими сообщениями с реальными данными из календаря/почты клиента (донеллически@gmail.com)",
+          "/week вернул 5 реальных событий (Ron Golfing, AMS-Chris check-in, Marci Rubin coaching, Chris/E breakfast, и канселд)",
+          "/mail вернул 7 реальных писем с from/subject/snippet"
+        ]
       }
     ],
-    "rejected": [
+    "rejected": [],
+    "superseded": [
       {
         "id": "feat-002",
-        "name": "Голосовой ввод",
-        "description": "Распознавание речи на Railway (Whisper API). ОТКЛОНЕНО заказчиком 2026-05-29: 'пока только текст'. Можно вернуть отдельной фичей позже — на Railway нет локального whisper, потребуется Whisper API (OpenAI/Groq).",
-        "category": "integration",
-        "rejected_reason": "MVP — только текст (решение заказчика 2026-05-29)"
+        "name": "Голосовой ввод (старая формулировка)",
+        "description": "Был отклонён 2026-05-29, восстановлен 2026-05-30. Новая формулировка — feat-012 (через OpenAI Whisper API).",
+        "superseded_by": "feat-012"
+      },
+      {
+        "id": "feat-004",
+        "name": "HTTP-клиент к n8n (минимальная версия)",
+        "description": "Реализован inline в feat-003 (src/n8n-client.ts с listEvents + listNewMail для /today /mail). Полная версия (6 actions) будет добавлена inline в feat-015/017/018/019 по мере необходимости.",
+        "superseded_by": "feat-015 / feat-017 / feat-018 / feat-019"
+      },
+      {
+        "id": "feat-006",
+        "name": "Календарь: детекция + создание (старая формулировка)",
+        "description": "Переразбита на feat-014 (event detector) + feat-015 (create+card). Старая формулировка использовала Haiku/OpenRouter — теперь Sonnet 4.6 через прямой Anthropic API.",
+        "superseded_by": "feat-014 + feat-015"
+      },
+      {
+        "id": "feat-007",
+        "name": "Календарь: правка/перенос/отмена (старая формулировка)",
+        "description": "Перенесена в feat-017 с теми же принципами.",
+        "superseded_by": "feat-017"
+      },
+      {
+        "id": "feat-008",
+        "name": "Календарь: проверка занятости (старая формулировка)",
+        "description": "Перенесена в feat-016 с расширением до 4-кнопочной карточки (по решению заказчика 2026-05-30).",
+        "superseded_by": "feat-016"
+      },
+      {
+        "id": "feat-009-old",
+        "name": "Почта: опрос (отдельной фичей)",
+        "description": "Объединена с выжимкой в feat-018 (опрос + summary + push — единый pipeline).",
+        "superseded_by": "feat-018"
       }
     ],
-    "superseded": [],
     "awaiting_reviewer": [],
     "awaiting_demo_milestone": [],
     "awaiting_user_acceptance": []
   },
   "waves": {
-    "0": "Исследование и решения (feat-001 n8n-токен — блокер, feat-002 голос)",
-    "1": "Фундамент (каркас бота на Railway, мост к n8n, модель данных Postgres)",
-    "2": "Календарь (создание, правка/отмена, проверка занятости)",
-    "3": "Почта (опрос Gmail, выжимки в Telegram)",
-    "future": "Google Drive + расширения по запросу клиента"
+    "1": "Foundation: feat-005 (Postgres 8 таблиц — reviewer passed), feat-010 (whitelist), feat-011 (Anthropic client), feat-021 (audit log infra)",
+    "2": "Smart input + recovery: feat-012 (Whisper voice), feat-020 (memory), feat-013 (intent router), feat-014 (event detector), feat-024 (cleanup cron), feat-025 (orphan recovery)",
+    "3": "Calendar full: feat-015 (create + card), feat-016 (conflict + 4-button card), feat-017 (modify/cancel + confirm)",
+    "4": "Mail full: feat-018 (poll + summary + push), feat-019 (send with confirm)",
+    "future": "Google Drive, recurring events, утренняя сводка дня"
   }
 }

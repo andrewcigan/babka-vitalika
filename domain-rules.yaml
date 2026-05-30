@@ -18,22 +18,33 @@ product_semantics:
 
   product_phases:
     phase_1_mvp:
-      goal: "Календарь (CRUD + конфликт-чек) + почта (выжимки в Telegram), на английском"
+      goal: |
+        Полный персональный ассистент (Marie Demo функционал + наши надёжностные надстройки),
+        English only, голос + текст, на Railway.
       includes:
-        - "Каркас бота на Railway (grammy Telegram, Postgres, healthcheck, env-конфиг)"
-        - "Мост к n8n: получение свежего Google access_token (механизм — research feat-001)"
-        - "Календарь: детекция события из текста → создание в Google + карточка"
-        - "Календарь: правка/перенос/отмена через текст (intent-детектор + подтверждение)"
-        - "Календарь: проверка занятости слота перед созданием + карточка конфликта"
-        - "Почта: опрос новых входящих Gmail → краткая выжимка (LLM) → уведомление в Telegram"
+        - "Каркас бота на Railway (grammy + Postgres + healthcheck + env, ГОТОВО)"
+        - "n8n webhook gateway (6 actions для Google, ГОТОВО)"
+        - "Whitelist chat_id (только разрешённые)"
+        - "Voice input через OpenAI Whisper API → текст"
+        - "Conversation memory в Postgres (50 последних обменов на chat_id)"
+        - "Natural language intent router (Sonnet 4.6)"
+        - "Календарь — создание из текста + Telegram-карточка"
+        - "Календарь — правка/перенос/отмена + confirm-карточка [Yes]/[Cancel]"
+        - "Календарь — конфликт-чек + 4-кнопочная карточка [Book anyway]/[Skip new]/[Cancel old]/[Reschedule old]"
+        - "Почта — активный опрос новых писем каждые 15 мин + push-выжимки"
+        - "Почта — отправка писем через confirm-карточку [Send]/[Cancel]"
+        - "Audit-log всех изменений в БД (append-only)"
+        - "Idempotency / dedup_key (повтор не создаёт дубль)"
       done_when:
-        - "Из Telegram создаётся/переносится/отменяется событие — подтверждено в реальном Google"
-        - "Новое письмо в Gmail → в течение интервала опроса приходит выжимка в Telegram (1 раз)"
-        - "Весь текст бота — на английском"
-        - "Бот живёт на Railway, переживает перезапуск без потери данных и без переавторизации Google"
+        - "Голосовое или текстовое сообщение → бот понимает intent → нужное действие в Google"
+        - "Конфликт-сценарий: занятый слот → карточка с 4 кнопками, любая ведёт к корректному состоянию"
+        - "Push-уведомление о новом письме приходит в течение 15 мин с выжимкой"
+        - "Бот переживает рестарт без потери conversation memory и без дублей"
+        - "Только whitelist chat_id может пользоваться"
+        - "Весь user-facing текст — английский"
 
     phase_2_future:
-      goal: "Google Drive + расширения по запросу клиента"
+      goal: "Google Drive + recurring events + другие расширения по запросу клиента"
       status: "captured, после phase_1"
 
   not_a_bug:
@@ -117,6 +128,41 @@ invariants:
     mechanism: "response_format json + валидатор схемы + retry; наследие Sensei-tsy."
     test_assertion: "нет tools=[...] в вызовах LLM"
 
+  - rule: "voice_input_via_whisper_api"
+    description: "Голосовые сообщения Telegram → транскрибация через OpenAI Whisper API → дальше как обычный текст. Whisper вызывается в боте (не в n8n), чтобы n8n оставался тонким исполнителем."
+    mechanism: "src/voice/whisper-client.ts через @openai/openai SDK. Файл скачивается через Telegram getFile API, шлётся в OpenAI как multipart."
+    test_assertion: "голосовое сообщение → текст в conversation → дальше нормальный flow"
+
+  - rule: "llm_provider_anthropic_sonnet"
+    description: "Все LLM-вызовы (intent, event-detect, email-summary, conflict-resolve) через Anthropic API напрямую, модель claude-sonnet-4-6. НЕ через OpenRouter, НЕ через подписку Claude Code."
+    mechanism: "src/llm/anthropic-client.ts через @anthropic-ai/sdk. Env: ANTHROPIC_API_KEY (на Railway). Локально берём из ANTHROPIC_DIRECT_KEY (нельзя ANTHROPIC_API_KEY на Mac mini — конфликт с Claude Code CLI)."
+    test_assertion: "нет вызовов OpenRouter / OpenAI Chat для LLM-задач (Whisper только)"
+
+  - rule: "mail_send_requires_confirm_card"
+    description: "Отправка письма от лица пользователя НИКОГДА не выполняется автоматически. Всегда карточка [✉️ Send] [✖ Cancel] с превью recipient/subject/body. Только после клика [Send] — реальный gmail.sendMessage."
+    mechanism: "src/mail/send-flow.ts → pending_outgoing_emails в БД → карточка с message_id → callback handler."
+    test_assertion: "e2e: 'email Bob about meeting' → карточка отправлена → событий отправки до клика [Send] = 0"
+
+  - rule: "whitelist_chat_ids"
+    description: "Бот принимает сообщения ТОЛЬКО от chat_id из явного whitelist (env var TELEGRAM_ALLOWED_CHAT_IDS, comma-separated). Любой другой chat → молчаливый ignore (не отвечать, не логировать пользовательский текст — только chat_id с warn)."
+    mechanism: "grammy middleware на этапе bot.use() — отсекает все updates от чужих chat_id ДО любого handler."
+    test_assertion: "POST с чужим chat_id → бот не отвечает, в логе warn 'unauthorized chat_id=X'"
+
+  - rule: "memory_in_postgres"
+    description: "Conversation memory (последние N сообщений диалога per chat_id) хранится в Postgres, не in-memory. Переживает рестарт Railway. Окно = 50 последних обменов (user→bot pairs)."
+    mechanism: "Таблица conversation_messages (chat_id, role, content_text, created_at). Чтение последних 50 при каждом LLM-вызове."
+    test_assertion: "рестарт бота → следующее сообщение знает контекст предыдущих"
+
+  - rule: "natural_language_primary"
+    description: "Натуральный язык — основной интерфейс. Slash-команды (/today /mail) остаются как быстрый fallback. Текст без слеша → intent-router определяет {schedule | modify | cancel | query_calendar | query_mail | send_mail | other}."
+    mechanism: "src/intent-router.ts (Sonnet 4.6) перед всеми action-handlers."
+    test_assertion: "'what's on tomorrow' → query_calendar; 'meeting with Sara at 3pm' → schedule; и т.п."
+
+  - rule: "conflict_card_4_buttons"
+    description: "При попытке создать событие в занятый слот — Telegram-карточка с 4 кнопками: [📌 Book anyway] [✌ Skip new] [🗑 Cancel old] [🔄 Reschedule old]. Reschedule old = подсказка 'reply with new time for X', stateful follow-up."
+    mechanism: "src/calendar/conflict-card.ts + pending_conflict_decisions table. Callback handler по каждой кнопке."
+    test_assertion: "create в занятый слот → карточка с 4 кнопками; клик Cancel old → старое удалено + новое создано"
+
 # ============================================================
 # DISAMBIGUATION
 # ============================================================
@@ -170,15 +216,20 @@ anti_patterns:
 # ============================================================
 cost_policy:
   per_feature_budget_usd: 5.00
-  monthly_total_budget_usd: 20.00     # LLM (выжимки писем + детекция) ~$5-10, Railway ~$5-10, n8n платит клиент
+  monthly_total_budget_usd: 50.00     # Sonnet 4.6 дороже Haiku в ~10x, ожидаемо $20-40/мес при умеренном трафике; Railway ~$5-10; Whisper копейки
   preferred_providers:
-    llm_summary: "openrouter/anthropic/claude-haiku-4-5"   # выжимки писем, детекция событий, intent
-    voice_to_text: "развилка feat-002 (OpenAI/Groq Whisper API, если нужен голос)"
+    llm: "anthropic/claude-sonnet-4-6 через ANTHROPIC_API_KEY (прямой API, не OpenRouter, не подписка)"
+    voice_to_text: "openai/whisper-1 через OPENAI_API_KEY (как в Marie Demo)"
     embeddings: "не нужны"
     image_gen: "не нужно"
-  notes: "n8n-облако оплачивает клиент (вне нашего бюджета). LLM через OpenRouter API-ключ, не подписка."
+  notes: |
+    n8n-облако оплачивает клиент (вне нашего бюджета).
+    LLM — Sonnet 4.6 через прямой Anthropic API ($3/$15 на 1M токенов in/out).
+    Решение заказчика 2026-05-30: Sonnet 4.6 для intent / event-detect / summary / conflict-resolve.
+    Whisper через OpenAI API (~$0.006/мин) — используем существующий OPENAI_API_KEY.
   forbidden_providers:
     - "claude_via_subscription"        # продукт не должен зависеть от подписки Claude Code
+    - "openrouter"                     # 2026-05-30: переход на прямой Anthropic API (решение заказчика)
 
 # ============================================================
 # OPEN DECISIONS — закрыть на /architecture

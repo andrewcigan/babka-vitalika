@@ -11,9 +11,11 @@
     "build": "tsc -p .",
     "start": "node dist/index.js",
     "dev": "tsc -p . --watch & node --watch dist/index.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "db:migrate": "node dist/db/migrate.js"
   },
   "dependencies": {
+    "drizzle-orm": "^0.45.2",
     "grammy": "^1.30.0",
     "pg": "^8.13.1",
     "pino": "^9.5.0",
