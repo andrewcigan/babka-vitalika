@@ -15,6 +15,7 @@
     "db:migrate": "node dist/db/migrate.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.100.1",
     "drizzle-orm": "^0.45.2",
     "grammy": "^1.30.0",
     "pg": "^8.13.1",

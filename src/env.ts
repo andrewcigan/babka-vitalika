@@ -16,6 +16,7 @@ export const env = {
   n8nWebhookUrl: required("N8N_WEBHOOK_URL"),
   n8nWebhookUrlTest: process.env.N8N_WEBHOOK_URL_TEST,
   n8nWebhookSecret: required("N8N_WEBHOOK_SECRET"),
+  anthropicApiKey: required("ANTHROPIC_API_KEY"),
   databaseUrl: process.env.DATABASE_URL,
   port: Number(optional("PORT", "3000")),
   nodeEnv: optional("NODE_ENV", "production"),

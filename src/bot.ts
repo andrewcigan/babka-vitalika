@@ -5,6 +5,7 @@ import { n8n } from "./n8n-client.js";
 import { startOfTodayISO, endOfTodayISO, addDaysISO, formatEventTimeRange } from "./time.js";
 import { log } from "./logger.js";
 import { getMode, setMode } from "./mode.js";
+import { think } from "./brain.js";
 
 export function createBot(): Bot {
   const bot = new Bot(env.telegramBotToken);
@@ -73,9 +74,13 @@ export function createBot(): Bot {
     }),
   );
 
-  bot.on("message:text", async (ctx) => {
-    await ctx.reply(ui.unknownCommand);
-  });
+  bot.on("message:text", (ctx) =>
+    withProgress(ctx, async () => {
+      const text = ctx.message?.text ?? "";
+      const reply = await think(ctx.chat?.id ?? 0, text, webhookFor(ctx));
+      return badge(ctx, reply);
+    }),
+  );
 
   bot.catch((err) => {
     log.error({ err: err.error }, "grammy uncaught error");
