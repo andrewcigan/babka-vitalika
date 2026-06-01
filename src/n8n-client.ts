@@ -179,5 +179,27 @@ export const n8n = {
     );
   },
 
-  // write-actions сюда же добавим, когда подключим LLM-логику (feat-006+)
+  getAvailability(params: { timeMin: string; timeMax: string }, webhookUrl?: string) {
+    return call<{ availability: unknown }>(
+      "calendar.getAvailability",
+      { time_min: params.timeMin, time_max: params.timeMax },
+      webhookUrl,
+    );
+  },
+
+  sendEmail(params: { to: string; subject: string; body: string }, webhookUrl?: string) {
+    return call<{ gmail_message_id: string; thread_id?: string; sent: boolean }>(
+      "gmail.send",
+      { to: params.to, subject: params.subject, body: params.body },
+      webhookUrl,
+    );
+  },
+
+  replyEmail(params: { threadId: string; body: string }, webhookUrl?: string) {
+    return call<{ gmail_message_id: string; thread_id?: string; sent: boolean }>(
+      "gmail.reply",
+      { thread_id: params.threadId, body: params.body },
+      webhookUrl,
+    );
+  },
 };

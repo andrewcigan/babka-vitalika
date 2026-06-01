@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { env } from "./env.js";
 import { n8n } from "./n8n-client.js";
 import { log } from "./logger.js";
+import type { PendingEmail } from "./pendingActions.js";
 
 const client = new Anthropic({ apiKey: env.anthropicApiKey });
 
@@ -93,6 +94,45 @@ const tools: Anthropic.Tool[] = [
       required: ["gmail_message_id"],
     },
   },
+  {
+    name: "get_availability",
+    description: "Check whether the user is free or busy in a time window (free/busy lookup).",
+    input_schema: {
+      type: "object",
+      properties: {
+        time_min: { type: "string", description: "Start of window, ISO 8601." },
+        time_max: { type: "string", description: "End of window, ISO 8601." },
+      },
+      required: ["time_min", "time_max"],
+    },
+  },
+  {
+    name: "send_email",
+    description:
+      "Compose a NEW email. This does not send immediately — it shows the user a confirmation button.",
+    input_schema: {
+      type: "object",
+      properties: {
+        to: { type: "string", description: "Recipient email address." },
+        subject: { type: "string" },
+        body: { type: "string", description: "Plain-text email body." },
+      },
+      required: ["to", "subject", "body"],
+    },
+  },
+  {
+    name: "reply_email",
+    description:
+      "Reply to an existing email thread (get thread_id from list_new_mail or get_message). Does not send immediately — shows a confirmation button.",
+    input_schema: {
+      type: "object",
+      properties: {
+        thread_id: { type: "string" },
+        body: { type: "string", description: "Plain-text reply body." },
+      },
+      required: ["thread_id", "body"],
+    },
+  },
 ];
 
 // Anthropic-hosted server tool: Claude runs the web search itself (no client execution).
@@ -113,14 +153,21 @@ function systemPrompt(): string {
     `When creating or changing events, express start and end times as ISO 8601 with the correct ${tz} UTC offset (for example 2026-06-02T15:00:00-04:00).`,
     "Use the tools to read real data and to make changes — never invent events or emails.",
     "To modify or cancel an event you first need its gcal_event_id; if you don't have it, call list_events to find the right event.",
-    "You can read recent mail and open a specific message, but you cannot send email yet. If asked to send a message, say that sending isn't enabled yet.",
+    "You can read recent mail, open a specific message, send a new email (send_email), and reply to a thread (reply_email).",
+    "IMPORTANT: send_email and reply_email do NOT send right away — they show the user a confirmation button. Always present the draft (recipient, subject, body) clearly first, then ask the user to tap Send to confirm. Never claim an email was already sent; the user confirms it.",
+    "You can check the user's free/busy availability with get_availability.",
     "You can search the web for up-to-date information and to look up companies, people, or websites the user mentions (including a specific URL).",
     "Keep replies short and plain for a chat app. You may use **bold** for key details, but do not use tables, headings, or links.",
     "Be concise and natural, like a helpful chief of staff. Confirm what you did in one short sentence. Ask a brief clarifying question only when the request is genuinely ambiguous.",
   ].join("\n");
 }
 
-async function runTool(name: string, input: Record<string, unknown>, webhookUrl: string): Promise<unknown> {
+async function runTool(
+  name: string,
+  input: Record<string, unknown>,
+  webhookUrl: string,
+  collector: { pending?: PendingEmail },
+): Promise<unknown> {
   switch (name) {
     case "list_events":
       return n8n.listEvents(
@@ -164,6 +211,26 @@ async function runTool(name: string, input: Record<string, unknown>, webhookUrl:
       );
     case "get_message":
       return n8n.getMessage({ gmailMessageId: String(input.gmail_message_id) }, webhookUrl);
+    case "get_availability":
+      return n8n.getAvailability(
+        { timeMin: String(input.time_min), timeMax: String(input.time_max) },
+        webhookUrl,
+      );
+    case "send_email":
+      collector.pending = {
+        kind: "send",
+        to: String(input.to),
+        subject: String(input.subject),
+        body: String(input.body),
+      };
+      return { staged: true, note: "Draft shown to the user with a confirm button. Do NOT claim it was sent." };
+    case "reply_email":
+      collector.pending = {
+        kind: "reply",
+        threadId: String(input.thread_id),
+        body: String(input.body),
+      };
+      return { staged: true, note: "Reply draft shown to the user with a confirm button. Do NOT claim it was sent." };
     default:
       throw new Error(`unknown tool: ${name}`);
   }
@@ -179,11 +246,16 @@ function trimHistory(history: Msg[]): void {
   }
 }
 
-export async function think(chatId: number, userText: string, webhookUrl: string): Promise<string> {
+export async function think(
+  chatId: number,
+  userText: string,
+  webhookUrl: string,
+): Promise<{ text: string; pending?: PendingEmail }> {
   const history = historyByChat.get(chatId) ?? [];
   history.push({ role: "user", content: userText });
 
   let reply = "";
+  const collector: { pending?: PendingEmail } = {};
 
   for (let i = 0; i < MAX_ITERS; i++) {
     const res = await client.messages.create({
@@ -218,7 +290,7 @@ export async function think(chatId: number, userText: string, webhookUrl: string
     for (const tu of toolUses) {
       let content: string;
       try {
-        const out = await runTool(tu.name, tu.input as Record<string, unknown>, webhookUrl);
+        const out = await runTool(tu.name, tu.input as Record<string, unknown>, webhookUrl, collector);
         content = JSON.stringify(out);
       } catch (e) {
         log.warn({ err: e, tool: tu.name }, "tool execution failed");
@@ -233,5 +305,5 @@ export async function think(chatId: number, userText: string, webhookUrl: string
 
   trimHistory(history);
   historyByChat.set(chatId, history);
-  return reply;
+  return { text: reply, pending: collector.pending };
 }
