@@ -95,6 +95,9 @@ const tools: Anthropic.Tool[] = [
   },
 ];
 
+// Anthropic-hosted server tool: Claude runs the web search itself (no client execution).
+const webSearchTool = { type: "web_search_20250305", name: "web_search", max_uses: 5 } as const;
+
 function systemPrompt(): string {
   const tz = env.productTimezone;
   const local = new Intl.DateTimeFormat("en-US", {
@@ -111,6 +114,7 @@ function systemPrompt(): string {
     "Use the tools to read real data and to make changes — never invent events or emails.",
     "To modify or cancel an event you first need its gcal_event_id; if you don't have it, call list_events to find the right event.",
     "You can read recent mail and open a specific message, but you cannot send email yet. If asked to send a message, say that sending isn't enabled yet.",
+    "You can search the web for up-to-date information and to look up companies, people, or websites the user mentions (including a specific URL).",
     "Keep replies short and plain for a chat app. You may use **bold** for key details, but do not use tables, headings, or links.",
     "Be concise and natural, like a helpful chief of staff. Confirm what you did in one short sentence. Ask a brief clarifying question only when the request is genuinely ambiguous.",
   ].join("\n");
@@ -186,11 +190,16 @@ export async function think(chatId: number, userText: string, webhookUrl: string
       model: MODEL,
       max_tokens: 1024,
       system: systemPrompt(),
-      tools,
+      tools: [...tools, webSearchTool],
       messages: history,
     });
 
     history.push({ role: "assistant", content: res.content });
+
+    if (res.stop_reason === "pause_turn") {
+      // A server tool (web search) paused the turn; re-call to let Claude continue.
+      continue;
+    }
 
     const toolUses = res.content.filter(
       (b): b is Anthropic.ToolUseBlock => b.type === "tool_use",
