@@ -21,6 +21,7 @@ export const ui = {
     "🧪 Test mode ON. Calendar and mail now use the test Google account (your own). Send /prod to switch back.",
   testModeOff: "Production mode. Calendar and mail use the client's account.",
   testModeUnavailable: "Test mode isn't configured on this bot.",
+  cleared: "Cleared — I've forgotten our conversation. Starting fresh.",
 
   noEvents: "Nothing scheduled in this window.",
   noMail: "No new inbox messages in this window.",

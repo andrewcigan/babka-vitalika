@@ -16,6 +16,10 @@ type Msg = Anthropic.MessageParam;
 // for now; durable history (conversation_messages table) is a later step.
 const historyByChat = new Map<number, Msg[]>();
 
+export function clearHistory(chatId: number): void {
+  historyByChat.delete(chatId);
+}
+
 const tools: Anthropic.Tool[] = [
   {
     name: "list_events",

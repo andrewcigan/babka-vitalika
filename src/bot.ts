@@ -5,7 +5,7 @@ import { n8n } from "./n8n-client.js";
 import { startOfTodayISO, endOfTodayISO, addDaysISO, formatEventTimeRange } from "./time.js";
 import { log } from "./logger.js";
 import { getMode, setMode } from "./mode.js";
-import { think } from "./brain.js";
+import { think, clearHistory } from "./brain.js";
 import { setPending, takePending, type PendingEmail } from "./pendingActions.js";
 
 export function createBot(): Bot {
@@ -32,6 +32,14 @@ export function createBot(): Bot {
   bot.command("prod", async (ctx) => {
     if (ctx.chat) setMode(ctx.chat.id, "prod");
     await ctx.reply(ui.testModeOff);
+  });
+
+  bot.command("clear", async (ctx) => {
+    if (ctx.chat) {
+      clearHistory(ctx.chat.id);
+      takePending(ctx.chat.id);
+    }
+    await ctx.reply(ui.cleared);
   });
 
   bot.command("today", (ctx) =>
