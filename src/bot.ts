@@ -109,13 +109,30 @@ async function withProgress(ctx: Context, task: () => Promise<string>): Promise<
     finalText = errorTextFor(err);
     log.error({ err }, "command failed");
   }
+  const html = toTelegramHtml(finalText);
   try {
-    await ctx.api.editMessageText(placeholder.chat.id, placeholder.message_id, finalText);
-  } catch (editErr) {
-    // edit might fail if message older than 48h or chat unreachable — fall back to new reply
-    log.warn({ err: editErr }, "editMessageText failed, falling back to reply");
-    await ctx.reply(finalText);
+    await ctx.api.editMessageText(placeholder.chat.id, placeholder.message_id, html, {
+      parse_mode: "HTML",
+    });
+  } catch (htmlErr) {
+    // Malformed entities or a stale message — retry as plain text, then a fresh reply.
+    log.warn({ err: htmlErr }, "HTML edit failed, retrying as plain text");
+    try {
+      await ctx.api.editMessageText(placeholder.chat.id, placeholder.message_id, finalText);
+    } catch {
+      await ctx.reply(finalText);
+    }
   }
+}
+
+// Telegram renders rich text only with a parse_mode. The brain (and our renderers)
+// emit light Markdown (**bold**, `code`); translate it to Telegram-safe HTML,
+// escaping &<> first so event titles or email text can't break the markup.
+function toTelegramHtml(s: string): string {
+  const escaped = s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return escaped
+    .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>");
 }
 
 function errorTextFor(err: unknown): string {

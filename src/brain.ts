@@ -111,6 +111,7 @@ function systemPrompt(): string {
     "Use the tools to read real data and to make changes — never invent events or emails.",
     "To modify or cancel an event you first need its gcal_event_id; if you don't have it, call list_events to find the right event.",
     "You can read recent mail and open a specific message, but you cannot send email yet. If asked to send a message, say that sending isn't enabled yet.",
+    "Keep replies short and plain for a chat app. You may use **bold** for key details, but do not use tables, headings, or links.",
     "Be concise and natural, like a helpful chief of staff. Confirm what you did in one short sentence. Ask a brief clarifying question only when the request is genuinely ambiguous.",
   ].join("\n");
 }
