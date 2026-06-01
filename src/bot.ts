@@ -36,7 +36,7 @@ export function createBot(): Bot {
 
   bot.command("clear", async (ctx) => {
     if (ctx.chat) {
-      clearHistory(ctx.chat.id);
+      await clearHistory(ctx.chat.id);
       takePending(ctx.chat.id);
     }
     await ctx.reply(ui.cleared);

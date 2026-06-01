@@ -29,3 +29,10 @@ export async function listRecentForChat(
     .limit(limit);
   return rows.reverse();
 }
+
+export async function archiveChat(chatId: bigint): Promise<void> {
+  await db
+    .update(conversationMessages)
+    .set({ isArchived: true })
+    .where(eq(conversationMessages.chatId, chatId));
+}

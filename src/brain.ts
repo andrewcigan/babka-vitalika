@@ -3,6 +3,11 @@ import { env } from "./env.js";
 import { n8n } from "./n8n-client.js";
 import { log } from "./logger.js";
 import type { PendingEmail } from "./pendingActions.js";
+import {
+  addMessage,
+  archiveChat,
+  listRecentForChat,
+} from "./db/repos/conversation-messages.js";
 
 const client = new Anthropic({ apiKey: env.anthropicApiKey });
 
@@ -16,8 +21,44 @@ type Msg = Anthropic.MessageParam;
 // for now; durable history (conversation_messages table) is a later step.
 const historyByChat = new Map<number, Msg[]>();
 
-export function clearHistory(chatId: number): void {
+export async function clearHistory(chatId: number): Promise<void> {
   historyByChat.delete(chatId);
+  if (!env.databaseUrl) return;
+  try {
+    await archiveChat(BigInt(chatId));
+  } catch (err) {
+    log.warn({ err }, "could not archive conversation in db");
+  }
+}
+
+async function loadHistoryFromDb(chatId: number): Promise<Msg[]> {
+  if (!env.databaseUrl) return [];
+  try {
+    const rows = await listRecentForChat(BigInt(chatId), 30);
+    const msgs: Msg[] = rows
+      .filter((r) => r.role === "user" || r.role === "assistant")
+      .map((r) => ({ role: r.role as "user" | "assistant", content: r.contentText }));
+    while (msgs.length > 0 && msgs[0]?.role !== "user") msgs.shift();
+    return msgs;
+  } catch (err) {
+    log.warn({ err }, "could not load conversation history from db");
+    return [];
+  }
+}
+
+async function persistTurn(chatId: number, userText: string, assistantText: string): Promise<void> {
+  if (!env.databaseUrl) return;
+  try {
+    await addMessage({ chatId: BigInt(chatId), role: "user", inputKind: "text", contentText: userText });
+    await addMessage({
+      chatId: BigInt(chatId),
+      role: "assistant",
+      inputKind: "text",
+      contentText: assistantText,
+    });
+  } catch (err) {
+    log.warn({ err }, "could not persist conversation turn to db");
+  }
 }
 
 const tools: Anthropic.Tool[] = [
@@ -255,7 +296,11 @@ export async function think(
   userText: string,
   webhookUrl: string,
 ): Promise<{ text: string; pending?: PendingEmail }> {
-  const history = historyByChat.get(chatId) ?? [];
+  let history = historyByChat.get(chatId);
+  if (!history) {
+    history = await loadHistoryFromDb(chatId);
+    historyByChat.set(chatId, history);
+  }
   history.push({ role: "user", content: userText });
 
   let reply = "";
@@ -309,5 +354,6 @@ export async function think(
 
   trimHistory(history);
   historyByChat.set(chatId, history);
+  await persistTurn(chatId, userText, reply);
   return { text: reply, pending: collector.pending };
 }
