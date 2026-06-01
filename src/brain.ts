@@ -122,10 +122,17 @@ const tools: Anthropic.Tool[] = [
     input_schema: {
       type: "object",
       properties: {
-        after_epoch_seconds: { type: "number", description: "Unix epoch seconds lower bound." },
-        max_results: { type: "number" },
+        after: {
+          type: "string",
+          description:
+            "Lower bound as ISO 8601 (e.g. 2026-05-29T00:00:00Z). To find a specific email, go back at least 2-3 days.",
+        },
+        max_results: {
+          type: "number",
+          description: "How many to return; use 50 or more when searching for a specific email.",
+        },
       },
-      required: ["after_epoch_seconds"],
+      required: ["after"],
     },
   },
   {
@@ -247,14 +254,16 @@ async function runTool(
       );
     case "cancel_event":
       return n8n.cancelEvent({ gcalEventId: String(input.gcal_event_id) }, webhookUrl);
-    case "list_new_mail":
+    case "list_new_mail": {
+      const parsed = Math.floor(Date.parse(String(input.after)) / 1000);
+      const afterEpochSeconds = Number.isFinite(parsed)
+        ? parsed
+        : Math.floor(Date.now() / 1000) - 2 * 86400;
       return n8n.listNewMail(
-        {
-          afterEpochSeconds: Number(input.after_epoch_seconds),
-          maxResults: input.max_results as number | undefined,
-        },
+        { afterEpochSeconds, maxResults: input.max_results as number | undefined },
         webhookUrl,
       );
+    }
     case "get_message":
       return n8n.getMessage({ gmailMessageId: String(input.gmail_message_id) }, webhookUrl);
     case "get_availability":
