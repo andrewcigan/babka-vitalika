@@ -24,14 +24,18 @@ type WebhookResponse<T> =
   | { ok: true; action: string; idempotency_key: string; data: T }
   | { ok: false; action: string; idempotency_key: string; error: { code: string; message: string } };
 
-async function call<T>(action: string, payload: Record<string, unknown>): Promise<T> {
+async function call<T>(
+  action: string,
+  payload: Record<string, unknown>,
+  webhookUrl: string = env.n8nWebhookUrl,
+): Promise<T> {
   const body = {
     action,
     idempotency_key: randomUUID(),
     payload,
   };
 
-  const res = await request(env.n8nWebhookUrl, {
+  const res = await request(webhookUrl, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -72,18 +76,20 @@ async function call<T>(action: string, payload: Record<string, unknown>): Promis
 }
 
 export const n8n = {
-  listEvents(params: { timeMin: string; timeMax: string }) {
-    return call<{ events: CalendarEventOut[] }>("calendar.listEvents", {
-      time_min: params.timeMin,
-      time_max: params.timeMax,
-    });
+  listEvents(params: { timeMin: string; timeMax: string }, webhookUrl?: string) {
+    return call<{ events: CalendarEventOut[] }>(
+      "calendar.listEvents",
+      { time_min: params.timeMin, time_max: params.timeMax },
+      webhookUrl,
+    );
   },
 
-  listNewMail(params: { afterEpochSeconds: number; maxResults?: number }) {
-    return call<{ messages: GmailMessageOut[] }>("gmail.listNew", {
-      after_epoch_seconds: params.afterEpochSeconds,
-      max_results: params.maxResults ?? 25,
-    });
+  listNewMail(params: { afterEpochSeconds: number; maxResults?: number }, webhookUrl?: string) {
+    return call<{ messages: GmailMessageOut[] }>(
+      "gmail.listNew",
+      { after_epoch_seconds: params.afterEpochSeconds, max_results: params.maxResults ?? 25 },
+      webhookUrl,
+    );
   },
 
   // write-actions сюда же добавим, когда подключим LLM-логику (feat-006+)

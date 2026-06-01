@@ -4,6 +4,7 @@ import { ui } from "./ui-strings.js";
 import { n8n } from "./n8n-client.js";
 import { startOfTodayISO, endOfTodayISO, addDaysISO, formatEventTimeRange } from "./time.js";
 import { log } from "./logger.js";
+import { getMode, setMode } from "./mode.js";
 
 export function createBot(): Bot {
   const bot = new Bot(env.telegramBotToken);
@@ -16,41 +17,59 @@ export function createBot(): Bot {
     await ctx.reply(ui.help, { parse_mode: "Markdown" });
   });
 
+  // Hidden operator commands — intentionally absent from /help and the command menu.
+  bot.command("test", async (ctx) => {
+    if (!env.n8nWebhookUrlTest) {
+      await ctx.reply(ui.testModeUnavailable);
+      return;
+    }
+    if (ctx.chat) setMode(ctx.chat.id, "test");
+    await ctx.reply(ui.testModeOn);
+  });
+
+  bot.command("prod", async (ctx) => {
+    if (ctx.chat) setMode(ctx.chat.id, "prod");
+    await ctx.reply(ui.testModeOff);
+  });
+
   bot.command("today", (ctx) =>
     withProgress(ctx, async () => {
-      const data = await n8n.listEvents({
-        timeMin: startOfTodayISO(),
-        timeMax: endOfTodayISO(),
-      });
-      return renderEvents(data.events, "Today");
+      const data = await n8n.listEvents(
+        { timeMin: startOfTodayISO(), timeMax: endOfTodayISO() },
+        webhookFor(ctx),
+      );
+      return badge(ctx, renderEvents(data.events, "Today"));
     }),
   );
 
   bot.command("tomorrow", (ctx) =>
     withProgress(ctx, async () => {
-      const data = await n8n.listEvents({
-        timeMin: addDaysISO(startOfTodayISO(), 1),
-        timeMax: addDaysISO(endOfTodayISO(), 1),
-      });
-      return renderEvents(data.events, "Tomorrow");
+      const data = await n8n.listEvents(
+        { timeMin: addDaysISO(startOfTodayISO(), 1), timeMax: addDaysISO(endOfTodayISO(), 1) },
+        webhookFor(ctx),
+      );
+      return badge(ctx, renderEvents(data.events, "Tomorrow"));
     }),
   );
 
   bot.command("week", (ctx) =>
     withProgress(ctx, async () => {
-      const data = await n8n.listEvents({
-        timeMin: startOfTodayISO(),
-        timeMax: addDaysISO(endOfTodayISO(), 7),
-      });
-      return renderEvents(data.events, "Next 7 days");
+      const data = await n8n.listEvents(
+        { timeMin: startOfTodayISO(), timeMax: addDaysISO(endOfTodayISO(), 7) },
+        webhookFor(ctx),
+      );
+      return badge(ctx, renderEvents(data.events, "Next 7 days"));
     }),
   );
 
   bot.command("mail", (ctx) =>
     withProgress(ctx, async () => {
       const afterEpoch = Math.floor(Date.now() / 1000) - 60 * 60;
-      const data = await n8n.listNewMail({ afterEpochSeconds: afterEpoch, maxResults: 10 });
-      return renderMail(data.messages);
+      const data = await n8n.listNewMail(
+        { afterEpochSeconds: afterEpoch, maxResults: 10 },
+        webhookFor(ctx),
+      );
+      return badge(ctx, renderMail(data.messages));
     }),
   );
 
@@ -63,6 +82,17 @@ export function createBot(): Bot {
   });
 
   return bot;
+}
+
+function webhookFor(ctx: Context): string {
+  if (getMode(ctx.chat?.id) === "test" && env.n8nWebhookUrlTest) {
+    return env.n8nWebhookUrlTest;
+  }
+  return env.n8nWebhookUrl;
+}
+
+function badge(ctx: Context, text: string): string {
+  return getMode(ctx.chat?.id) === "test" ? `${ui.testBadge}\n${text}` : text;
 }
 
 async function withProgress(ctx: Context, task: () => Promise<string>): Promise<void> {

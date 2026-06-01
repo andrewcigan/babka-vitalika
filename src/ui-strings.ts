@@ -16,6 +16,12 @@ export const ui = {
   unknownCommand:
     "I don't recognise that yet. Type /help for the list of commands.",
 
+  testBadge: "🧪 TEST",
+  testModeOn:
+    "🧪 Test mode ON. Calendar and mail now use the test Google account (your own). Send /prod to switch back.",
+  testModeOff: "Production mode. Calendar and mail use the client's account.",
+  testModeUnavailable: "Test mode isn't configured on this bot.",
+
   noEvents: "Nothing scheduled in this window.",
   noMail: "No new inbox messages in this window.",
   thinking: "Working on it…",
