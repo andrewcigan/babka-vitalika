@@ -102,10 +102,17 @@ export const n8n = {
     );
   },
 
-  listNewMail(params: { afterEpochSeconds: number; maxResults?: number }, webhookUrl?: string) {
+  listNewMail(
+    params: { afterEpochSeconds: number; maxResults?: number; labelIds?: string[] },
+    webhookUrl?: string,
+  ) {
     return call<{ messages: GmailMessageOut[] }>(
       "gmail.listNew",
-      { after_epoch_seconds: params.afterEpochSeconds, max_results: params.maxResults ?? 25 },
+      {
+        after_epoch_seconds: params.afterEpochSeconds,
+        max_results: params.maxResults ?? 25,
+        label_ids: params.labelIds,
+      },
       webhookUrl,
     );
   },

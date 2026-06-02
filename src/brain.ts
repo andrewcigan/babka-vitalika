@@ -131,6 +131,12 @@ const tools: Anthropic.Tool[] = [
           type: "number",
           description: "How many to return; use 50 or more when searching for a specific email.",
         },
+        labels: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            'Gmail folders/labels to search. Defaults to the inbox. Use ["SENT"] for emails the user sent, or ["INBOX","SENT"] for both.',
+        },
       },
       required: ["after"],
     },
@@ -222,9 +228,10 @@ function systemPrompt(): string {
     "Use the tools to read real data and to make changes — never invent events or emails.",
     "To modify or cancel an event you first need its gcal_event_id; if you don't have it, call list_events to find the right event.",
     "You can read recent mail, open a specific message, send a new email (send_email), and reply to a thread (reply_email).",
-    "When the user refers to a specific email (e.g. 'the email from DigitalOcean'), find it by calling list_new_mail with a generous window — cover at least the last 2-3 days with a high max_results like 50 — then open it with get_message. The inbox lookup is time-windowed, not a keyword search, so never conclude an email is missing without first checking a wide enough window.",
+    "When the user refers to a specific email (e.g. 'the email from DigitalOcean'), find it by calling list_new_mail with a generous window — cover at least the last 2-3 days with a high max_results like 50 — then open it with get_message. The inbox lookup is time-windowed, not a keyword search, so never conclude an email is missing without first checking a wide enough window. For an email the user SENT (e.g. 'the email I sent to X'), search labels: [\"SENT\"].",
     "IMPORTANT: send_email and reply_email do NOT send right away — they show the user a confirmation button. Always present the draft (recipient, subject, body) clearly first, then ask the user to tap Send to confirm. Never claim an email was already sent; the user confirms it.",
     "You can move an email to Trash with trash_email (recoverable). Like sending, it does NOT happen immediately — it shows a confirmation button. Find the message id via list_new_mail or get_message first, tell the user which email will be trashed, and let them confirm.",
+    "When the user clearly points to an email to act on (by sender, subject, or 'the one I sent to X') and you find a strong match, go ahead and stage the action for the user's button confirmation instead of asking extra questions — the confirmation button is the safety net. The sent-mail list may not include the recipient, so match on subject/sender/recency.",
     "You can check the user's free/busy availability with get_availability.",
     "You can search the web for up-to-date information and to look up companies, people, or websites the user mentions (including a specific URL).",
     "Keep replies short and plain for a chat app. You may use **bold** for key details, but do not use tables, headings, or links.",
@@ -277,7 +284,11 @@ async function runTool(
         ? parsed
         : Math.floor(Date.now() / 1000) - 2 * 86400;
       return n8n.listNewMail(
-        { afterEpochSeconds, maxResults: input.max_results as number | undefined },
+        {
+          afterEpochSeconds,
+          maxResults: input.max_results as number | undefined,
+          labelIds: Array.isArray(input.labels) ? (input.labels as string[]) : undefined,
+        },
         webhookUrl,
       );
     }
