@@ -95,7 +95,7 @@ export function createBot(): Bot {
     if (result.pending && ctx.chat) setPending(ctx.chat.id, result.pending);
     const finalText =
       badge(ctx, result.text) + (result.pending ? draftPreview(result.pending) : "");
-    const reply_markup = result.pending ? confirmKeyboard() : undefined;
+    const reply_markup = result.pending ? confirmKeyboard(result.pending.kind) : undefined;
     try {
       await ctx.api.editMessageText(
         placeholder.chat.id,
@@ -126,13 +126,17 @@ export function createBot(): Bot {
           { to: action.to, subject: action.subject, body: action.body },
           webhookFor(ctx),
         );
-      } else {
+        await ctx.editMessageText("✅ Sent.");
+      } else if (action.kind === "reply") {
         await n8n.replyEmail({ threadId: action.threadId, body: action.body }, webhookFor(ctx));
+        await ctx.editMessageText("✅ Sent.");
+      } else {
+        await n8n.trashEmail({ messageId: action.messageId }, webhookFor(ctx));
+        await ctx.editMessageText("🗑 Moved to Trash.");
       }
-      await ctx.editMessageText("✅ Sent.");
     } catch (err) {
-      log.error({ err }, "send failed");
-      await ctx.editMessageText("Couldn't send — something went wrong. Nothing was sent.");
+      log.error({ err }, "email action failed");
+      await ctx.editMessageText("Couldn't do that — something went wrong. Nothing was changed.");
     }
     await ctx.answerCallbackQuery();
   });
@@ -154,11 +158,15 @@ function draftPreview(p: PendingEmail): string {
   if (p.kind === "send") {
     return `\n\n**To:** ${p.to}\n**Subject:** ${p.subject}\n\n${p.body}`;
   }
+  if (p.kind === "trash") {
+    return `\n\n🗑 **Move to Trash:** ${p.summary}`;
+  }
   return `\n\n**Reply:**\n${p.body}`;
 }
 
-function confirmKeyboard(): InlineKeyboard {
-  return new InlineKeyboard().text("✅ Send", "confirm_send").text("❌ Cancel", "cancel_send");
+function confirmKeyboard(kind: PendingEmail["kind"]): InlineKeyboard {
+  const confirmLabel = kind === "trash" ? "🗑 Delete" : "✅ Send";
+  return new InlineKeyboard().text(confirmLabel, "confirm_send").text("❌ Cancel", "cancel_send");
 }
 
 function webhookFor(ctx: Context): string {

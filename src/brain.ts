@@ -185,6 +185,22 @@ const tools: Anthropic.Tool[] = [
       required: ["thread_id", "body"],
     },
   },
+  {
+    name: "trash_email",
+    description:
+      "Move an email to Trash (recoverable). Does not happen immediately — shows a confirmation button. Get the message id from list_new_mail or get_message.",
+    input_schema: {
+      type: "object",
+      properties: {
+        gmail_message_id: { type: "string" },
+        summary: {
+          type: "string",
+          description: "Short description of the email being trashed, e.g. sender and subject.",
+        },
+      },
+      required: ["gmail_message_id", "summary"],
+    },
+  },
 ];
 
 // Anthropic-hosted server tool: Claude runs the web search itself (no client execution).
@@ -208,6 +224,7 @@ function systemPrompt(): string {
     "You can read recent mail, open a specific message, send a new email (send_email), and reply to a thread (reply_email).",
     "When the user refers to a specific email (e.g. 'the email from DigitalOcean'), find it by calling list_new_mail with a generous window — cover at least the last 2-3 days with a high max_results like 50 — then open it with get_message. The inbox lookup is time-windowed, not a keyword search, so never conclude an email is missing without first checking a wide enough window.",
     "IMPORTANT: send_email and reply_email do NOT send right away — they show the user a confirmation button. Always present the draft (recipient, subject, body) clearly first, then ask the user to tap Send to confirm. Never claim an email was already sent; the user confirms it.",
+    "You can move an email to Trash with trash_email (recoverable). Like sending, it does NOT happen immediately — it shows a confirmation button. Find the message id via list_new_mail or get_message first, tell the user which email will be trashed, and let them confirm.",
     "You can check the user's free/busy availability with get_availability.",
     "You can search the web for up-to-date information and to look up companies, people, or websites the user mentions (including a specific URL).",
     "Keep replies short and plain for a chat app. You may use **bold** for key details, but do not use tables, headings, or links.",
@@ -286,6 +303,13 @@ async function runTool(
         body: String(input.body),
       };
       return { staged: true, note: "Reply draft shown to the user with a confirm button. Do NOT claim it was sent." };
+    case "trash_email":
+      collector.pending = {
+        kind: "trash",
+        messageId: String(input.gmail_message_id),
+        summary: String(input.summary),
+      };
+      return { staged: true, note: "Trash request shown to the user with a confirm button. Do NOT claim it was deleted yet." };
     default:
       throw new Error(`unknown tool: ${name}`);
   }

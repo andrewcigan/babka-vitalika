@@ -202,4 +202,12 @@ export const n8n = {
       webhookUrl,
     );
   },
+
+  trashEmail(params: { messageId: string }, webhookUrl?: string) {
+    return call<{ gmail_message_id: string; trashed: boolean }>(
+      "gmail.trash",
+      { gmail_message_id: params.messageId },
+      webhookUrl,
+    );
+  },
 };

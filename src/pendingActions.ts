@@ -2,7 +2,8 @@
 // send happens in the bot's button-callback handler, never autonomously.
 export type PendingEmail =
   | { kind: "send"; to: string; subject: string; body: string }
-  | { kind: "reply"; threadId: string; body: string };
+  | { kind: "reply"; threadId: string; body: string }
+  | { kind: "trash"; messageId: string; summary: string };
 
 const pending = new Map<number, PendingEmail>();
 
